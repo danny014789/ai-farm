@@ -1,0 +1,25 @@
+# Plant profile - set via Telegram /setplant command or edit manually.
+# When the plant name changes, the AI will research optimal growing conditions
+# and save them to data/plant_knowledge.md
+
+plant:
+  name: ""                    # e.g., "basil", "cherry tomato", "cannabis"
+  variety: ""                 # e.g., "Genovese", "Sweet 100"
+  growth_stage: "seedling"    # seedling | vegetative | flowering | fruiting
+  planted_date: ""            # YYYY-MM-DD
+  notes: ""                   # any special notes
+
+# These get populated automatically by plant_knowledge.py after research
+# but you can override them manually
+ideal_conditions:
+  temp_min_c: 18.0
+  temp_max_c: 28.0
+  humidity_min_pct: 40
+  humidity_max_pct: 70
+  soil_moisture_min_pct: 30
+  soil_moisture_max_pct: 70
+  light_hours: 14
+  co2_min_ppm: 400
+
+# Set to true after AI has researched this plant
+knowledge_cached: false

@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/decisions.jsonl
+data/sensor_history.jsonl
+data/plant_knowledge.md
+*.egg-info/
+dist/
+build/
+.pytest_cache/

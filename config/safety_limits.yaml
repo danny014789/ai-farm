@@ -1,0 +1,26 @@
+# Safety limits - these are HARDCODED maximums that the AI cannot override.
+# Modify these manually based on your setup. The AI agent will never exceed these values.
+
+water:
+  max_duration_sec: 30        # max single watering duration
+  min_interval_min: 60        # minimum minutes between waterings
+  daily_max_count: 6          # max waterings per day
+
+heater:
+  max_temp_c: 30.0            # heater turns off above this temp
+  min_temp_c: 10.0            # heater turns on below this (failsafe)
+  max_continuous_min: 120     # max continuous heater runtime
+
+light:
+  max_hours_per_day: 18       # max light hours per 24h cycle
+  schedule_on: "06:00"        # earliest light-on time
+  schedule_off: "24:00"       # latest light-off time
+
+circulation:
+  max_duration_sec: 300       # max single circulation fan runtime
+  min_interval_min: 30        # minimum minutes between activations
+
+# Global safety
+emergency_stop_file: /tmp/plant-agent-stop   # touch this file to halt all actions
+max_actions_per_hour: 10                     # rate limit across all action types
+api_daily_cost_cap_usd: 1.00                 # stop API calls if daily cost exceeds this
