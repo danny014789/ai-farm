@@ -29,6 +29,18 @@ VALID_SENSOR_DICT = {
     "timestamp": "2026-02-18T10:30:00Z",
 }
 
+# Actual farmctl.py output format (different field names + raw ADC values)
+FARMCTL_SENSOR_DICT = {
+    "raw": "498,23.62,51.58,53,1023,1,0,0,0,0,0,0,0",
+    "fields": ["498", "23.62", "51.58", "53", "1023"],
+    "co2_ppm": 498.0,
+    "temp_c": 23.62,
+    "humidity_pct": 51.58,
+    "light_raw": 53.0,
+    "soil_raw": 1023.0,
+    "source": "serial:r",
+}
+
 
 # ---------------------------------------------------------------------------
 # _parse_sensor_json
@@ -98,6 +110,70 @@ class TestParseSensorJson:
         data["temperature_c"] = "24.5"
         result = _parse_sensor_json(data)
         assert result.temperature_c == 24.5
+
+
+# ---------------------------------------------------------------------------
+# farmctl.py field name mapping
+# ---------------------------------------------------------------------------
+
+
+class TestFarmctlFieldMapping:
+    """Tests for mapping farmctl.py field names to canonical SensorData fields."""
+
+    def test_farmctl_output_parsed_correctly(self):
+        """Real farmctl.py output with different field names should parse."""
+        result = _parse_sensor_json(FARMCTL_SENSOR_DICT)
+        assert isinstance(result, SensorData)
+        assert result.temperature_c == 23.62
+        assert result.humidity_pct == 51.58
+        assert result.co2_ppm == 498
+        assert result.light_level == 53
+
+    def test_temp_c_mapped_to_temperature_c(self):
+        data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
+                "light_raw": 500, "soil_raw": 600}
+        result = _parse_sensor_json(data)
+        assert result.temperature_c == 25.0
+
+    def test_light_raw_mapped_to_light_level(self):
+        data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
+                "light_raw": 512, "soil_raw": 600}
+        result = _parse_sensor_json(data)
+        assert result.light_level == 512
+
+    def test_soil_raw_converted_to_percentage(self):
+        """soil_raw=1023 (dry) should map to ~0%, soil_raw=300 (wet) to ~100%."""
+        data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
+                "light_raw": 500, "soil_raw": 1023}
+        result = _parse_sensor_json(data)
+        assert result.soil_moisture_pct == 0.0
+
+    def test_soil_raw_wet_converted(self):
+        """soil_raw=300 (wet) should map to 100%."""
+        data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
+                "light_raw": 500, "soil_raw": 300}
+        result = _parse_sensor_json(data)
+        assert result.soil_moisture_pct == 100.0
+
+    def test_soil_raw_midpoint(self):
+        """soil_raw in the middle should give roughly 50%."""
+        midpoint = (1023 + 300) / 2  # 661.5
+        data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
+                "light_raw": 500, "soil_raw": midpoint}
+        result = _parse_sensor_json(data)
+        assert 45.0 <= result.soil_moisture_pct <= 55.0
+
+    def test_soil_moisture_pct_passes_through(self):
+        """If soil_moisture_pct is already 0-100, it should not be converted."""
+        result = _parse_sensor_json(VALID_SENSOR_DICT)
+        assert result.soil_moisture_pct == 45.0
+
+    def test_canonical_names_preferred_over_farmctl(self):
+        """If both temperature_c and temp_c exist, temperature_c wins."""
+        data = {"temperature_c": 30.0, "temp_c": 20.0, "humidity_pct": 60.0,
+                "co2_ppm": 400, "light_level": 500, "soil_moisture_pct": 50.0}
+        result = _parse_sensor_json(data)
+        assert result.temperature_c == 30.0
 
 
 # ---------------------------------------------------------------------------

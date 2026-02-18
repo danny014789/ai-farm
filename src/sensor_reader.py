@@ -13,6 +13,12 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Soil moisture ADC calibration. Most capacitive/resistive sensors output
+# a high raw value when dry and a low value when wet. Adjust these if your
+# sensor behaves differently.
+SOIL_RAW_DRY = 1023  # ADC reading in completely dry soil
+SOIL_RAW_WET = 300   # ADC reading in saturated soil
+
 
 @dataclass
 class SensorData:
@@ -114,6 +120,17 @@ def read_sensors(
 def _parse_sensor_json(data: dict) -> SensorData:
     """Parse and validate raw JSON dict into SensorData.
 
+    Handles field name mapping from farmctl.py output format:
+        farmctl.py          ->  SensorData
+        temp_c              ->  temperature_c
+        humidity_pct        ->  humidity_pct
+        co2_ppm             ->  co2_ppm
+        light_raw           ->  light_level
+        soil_raw (0-1023)   ->  soil_moisture_pct (0-100%)
+
+    Also accepts the canonical SensorData field names directly, so mock
+    data and pre-mapped dicts still work.
+
     Args:
         data: Raw dict from farmctl.py JSON output.
 
@@ -123,25 +140,56 @@ def _parse_sensor_json(data: dict) -> SensorData:
     Raises:
         SensorReadError: If required fields are missing or invalid.
     """
-    required_fields = [
-        "temperature_c",
-        "humidity_pct",
-        "co2_ppm",
-        "light_level",
-        "soil_moisture_pct",
-    ]
+    # Map farmctl.py field names -> canonical names.
+    # Check canonical name first, then fall back to farmctl.py name.
+    field_map = {
+        "temperature_c": ["temperature_c", "temp_c"],
+        "humidity_pct":  ["humidity_pct"],
+        "co2_ppm":       ["co2_ppm"],
+        "light_level":   ["light_level", "light_raw"],
+        "soil_moisture":  ["soil_moisture_pct", "soil_raw"],
+    }
 
-    missing = [f for f in required_fields if f not in data]
+    resolved: dict = {}
+    missing: list[str] = []
+
+    for canonical, candidates in field_map.items():
+        found = False
+        for key in candidates:
+            if key in data:
+                resolved[canonical] = data[key]
+                found = True
+                break
+        if not found:
+            missing.append(f"{canonical} (tried: {candidates})")
+
     if missing:
         raise SensorReadError(f"Missing sensor fields: {missing}")
 
     try:
+        temperature_c = float(resolved["temperature_c"])
+        humidity_pct = float(resolved["humidity_pct"])
+        co2_ppm = int(float(resolved["co2_ppm"]))
+        light_level = int(float(resolved["light_level"]))
+
+        # Convert soil raw ADC (0-1023) to percentage if the value came
+        # from "soil_raw". Values already in 0-100 range pass through.
+        soil_value = float(resolved["soil_moisture"])
+        if soil_value > 100:
+            # Raw ADC value -- convert to percentage (high raw = dry)
+            soil_moisture_pct = max(0.0, min(100.0,
+                (SOIL_RAW_DRY - soil_value) / (SOIL_RAW_DRY - SOIL_RAW_WET) * 100
+            ))
+            soil_moisture_pct = round(soil_moisture_pct, 1)
+        else:
+            soil_moisture_pct = soil_value
+
         return SensorData(
-            temperature_c=float(data["temperature_c"]),
-            humidity_pct=float(data["humidity_pct"]),
-            co2_ppm=int(data["co2_ppm"]),
-            light_level=int(data["light_level"]),
-            soil_moisture_pct=float(data["soil_moisture_pct"]),
+            temperature_c=temperature_c,
+            humidity_pct=humidity_pct,
+            co2_ppm=co2_ppm,
+            light_level=light_level,
+            soil_moisture_pct=soil_moisture_pct,
             timestamp=data.get(
                 "timestamp",
                 datetime.now(timezone.utc).isoformat(),
