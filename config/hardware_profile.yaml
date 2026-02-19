@@ -1,0 +1,30 @@
+# Hardware profile - describes the physical setup so the AI can make
+# informed decisions (e.g. "8 seconds of watering = ~120ml").
+#
+# Edit manually or let the AI update values via chat
+# (e.g. "the pump flow rate is about 20 ml/sec").
+
+pump:
+  type: "peristaltic"           # peristaltic | submersible | diaphragm
+  flow_rate_ml_per_sec: 15      # measured or estimated
+
+pot:
+  volume_liters: 5
+  material: "plastic"           # plastic | ceramic | terracotta | fabric
+  has_drainage: true
+
+grow_light:
+  type: "LED"
+  wattage: 30
+  height_cm: 25                 # distance from canopy
+
+heater:
+  type: "ceramic"
+  wattage: 50
+
+circulation_fan:
+  type: "USB fan"
+
+sensors:
+  soil_raw_dry: 1023            # ADC reading in open air (fully dry)
+  soil_raw_wet: 300             # ADC reading submerged in water (fully wet)

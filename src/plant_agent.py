@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 from src.action_executor import ActionExecutor
 from src.actuator_state import load_actuator_state, update_after_action
 from src.claude_client import get_plant_decision
-from src.config_loader import load_plant_profile
+from src.config_loader import load_hardware_profile, load_plant_profile, save_hardware_profile
 from src.logger import (
     load_recent_decisions,
     load_recent_plant_log,
@@ -97,13 +97,23 @@ def run_check(
         "mode": "dry-run" if dry_run else "live",
     }
 
+    # --- 0. Load hardware profile ---
+    try:
+        hardware_profile = load_hardware_profile()
+    except FileNotFoundError:
+        hardware_profile = {}
+    sensors_cfg = hardware_profile.get("sensors", {})
+    soil_cal = None
+    if sensors_cfg.get("soil_raw_dry") and sensors_cfg.get("soil_raw_wet"):
+        soil_cal = (int(sensors_cfg["soil_raw_dry"]), int(sensors_cfg["soil_raw_wet"]))
+
     # --- 1. Read sensors ---
     try:
         if use_mock:
             sensor_data = read_sensors_mock()
             logger.info("Using mock sensor data")
         else:
-            sensor_data = read_sensors(farmctl_path)
+            sensor_data = read_sensors(farmctl_path, soil_cal=soil_cal)
             logger.info("Sensor read OK: temp=%.1fC soil=%.0f%%",
                         sensor_data.temperature_c, sensor_data.soil_moisture_pct)
     except SensorReadError as e:
@@ -155,6 +165,7 @@ def run_check(
             photo_path=photo_path,
             actuator_state=actuator_state,
             plant_log=plant_log,
+            hardware_profile=hardware_profile,
         )
         actions_summary = ", ".join(
             a.get("action", "?") for a in decision.get("actions", [])
@@ -242,6 +253,11 @@ def run_check(
         _append_knowledge_update(knowledge_update, data_dir)
     summary["knowledge_update"] = knowledge_update
 
+    hardware_update = decision.get("hardware_update")
+    if hardware_update and isinstance(hardware_update, dict):
+        _apply_hardware_update(hardware_update, hardware_profile)
+    summary["hardware_update"] = hardware_update
+
     return summary
 
 
@@ -280,6 +296,32 @@ def _append_knowledge_update(update_text: str, data_dir: str) -> None:
     with open(knowledge_path, "a") as f:
         f.write(entry)
     logger.info("Appended knowledge update to %s", knowledge_path)
+
+
+def _apply_hardware_update(
+    updates: dict[str, Any],
+    hardware_profile: dict[str, Any],
+) -> None:
+    """Apply dot-notation updates to the hardware profile and save.
+
+    Args:
+        updates: Dict with dot-notation keys like "pump.flow_rate_ml_per_sec".
+        hardware_profile: Current hardware profile dict (mutated in place).
+    """
+    for dotkey, value in updates.items():
+        parts = dotkey.split(".")
+        target = hardware_profile
+        for part in parts[:-1]:
+            if part not in target or not isinstance(target[part], dict):
+                target[part] = {}
+            target = target[part]
+        target[parts[-1]] = value
+        logger.info("Hardware profile updated: %s = %s", dotkey, value)
+
+    try:
+        save_hardware_profile(hardware_profile)
+    except Exception as e:
+        logger.error("Failed to save hardware profile: %s", e)
 
 
 def format_summary_text(summary: dict) -> str:

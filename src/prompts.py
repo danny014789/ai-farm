@@ -46,7 +46,8 @@ _RESPONSE_SCHEMA = """\
   "notes": "Any additional observations, concerns, or recommendations",
   "message": "A natural, conversational summary for the human caretaker. 2-4 sentences.",
   "observations": ["noteworthy observations to remember for future checks"],
-  "knowledge_update": "significant learning to append to knowledge doc, or null"
+  "knowledge_update": "significant learning to append to knowledge doc, or null",
+  "hardware_update": {"section.key": "new_value"} or null
 }"""
 
 
@@ -55,7 +56,11 @@ _RESPONSE_SCHEMA = """\
 # ---------------------------------------------------------------------------
 
 
-def build_system_prompt(plant_profile: dict[str, Any], plant_knowledge: str) -> str:
+def build_system_prompt(
+    plant_profile: dict[str, Any],
+    plant_knowledge: str,
+    hardware_profile: dict[str, Any] | None = None,
+) -> str:
     """Build the system prompt that defines Claude's role and constraints.
 
     Args:
@@ -64,6 +69,8 @@ def build_system_prompt(plant_profile: dict[str, Any], plant_knowledge: str) -> 
             ``ideal_conditions``.
         plant_knowledge: Cached markdown document with researched growing
             conditions for the current plant. May be empty if not yet cached.
+        hardware_profile: Parsed hardware_profile.yaml dict describing pump,
+            pot, light, heater, fan, and sensor calibration.
 
     Returns:
         A complete system prompt string.
@@ -92,6 +99,24 @@ def build_system_prompt(plant_profile: dict[str, Any], plant_knowledge: str) -> 
             f"{plant_knowledge.strip()}\n"
         )
 
+    # Hardware profile section
+    hardware_section = ""
+    if hardware_profile:
+        hw_block = _format_hardware_profile(hardware_profile)
+        pump = hardware_profile.get("pump", {})
+        flow = pump.get("flow_rate_ml_per_sec")
+        pot = hardware_profile.get("pot", {})
+        vol = pot.get("volume_liters")
+        hardware_section = (
+            "\n\n## Hardware Setup\n"
+            f"{hw_block}\n"
+        )
+        if flow and vol:
+            hardware_section += (
+                f"\nThis means 1 second of watering delivers ~{flow}ml into a "
+                f"{vol}L pot. Use this to choose appropriate watering durations.\n"
+            )
+
     return f"""\
 You are a plant care expert AI agent responsible for a single plant growing in a controlled indoor environment on a Raspberry Pi automation system.
 
@@ -103,7 +128,7 @@ You are a plant care expert AI agent responsible for a single plant growing in a
 
 ## Ideal Growing Conditions
 {ideal_block}
-{knowledge_section}
+{knowledge_section}{hardware_section}
 ## Available Actions
 You may recommend one or more actions per evaluation. Choose from:
 
@@ -137,6 +162,13 @@ You have a plant log where past observations are recorded. Use it to track patte
 (watering effectiveness, drying rates), note growth milestones, record calibration \
 insights. Write observations in the "observations" array. Use "knowledge_update" for \
 significant discoveries worth adding to the knowledge document.
+
+## Hardware Profile Updates
+You can update the hardware profile (pump flow rate, pot size, sensor calibration, etc.) \
+by including a "hardware_update" dict in your response. Use dot-notation keys like \
+"pump.flow_rate_ml_per_sec" or "sensors.soil_raw_wet". Do this when you observe that \
+the configured values don't match reality (e.g. watering 5s raised soil moisture more \
+than expected given the configured flow rate).
 
 ## Human Communication
 The "message" field is sent to the plant owner via Telegram. Write a brief, friendly \
@@ -325,12 +357,15 @@ _CHAT_RESPONSE_SCHEMA = """\
       "reason": "Why this action is being taken"
     }
   ],
-  "observations": ["Optional: noteworthy observations worth logging for future reference"]
+  "observations": ["Optional: noteworthy observations worth logging for future reference"],
+  "hardware_update": {"section.key": "new_value"} or null
 }"""
 
 
 def build_chat_system_prompt(
-    plant_profile: dict[str, Any], plant_knowledge: str
+    plant_profile: dict[str, Any],
+    plant_knowledge: str,
+    hardware_profile: dict[str, Any] | None = None,
 ) -> str:
     """Build the system prompt for conversational chat mode.
 
@@ -340,6 +375,7 @@ def build_chat_system_prompt(
     Args:
         plant_profile: Parsed plant_profile.yaml dict.
         plant_knowledge: Cached plant knowledge markdown string.
+        hardware_profile: Parsed hardware_profile.yaml dict.
 
     Returns:
         System prompt string for chat mode.
@@ -363,6 +399,22 @@ def build_chat_system_prompt(
             f"{plant_knowledge.strip()}\n"
         )
 
+    hardware_section = ""
+    if hardware_profile:
+        hw_block = _format_hardware_profile(hardware_profile)
+        pump = hardware_profile.get("pump", {})
+        flow = pump.get("flow_rate_ml_per_sec")
+        pot = hardware_profile.get("pot", {})
+        vol = pot.get("volume_liters")
+        hardware_section = (
+            "\n\n## Hardware Setup\n"
+            f"{hw_block}\n"
+        )
+        if flow and vol:
+            hardware_section += (
+                f"\n1 second of watering ≈ {flow}ml into a {vol}L pot.\n"
+            )
+
     return f"""\
 You are a friendly, knowledgeable plant care AI assistant. You are responsible for \
 a single plant in a controlled indoor environment on a Raspberry Pi automation system.
@@ -378,7 +430,7 @@ and helpfully.
 
 ## Ideal Growing Conditions
 {ideal_block}
-{knowledge_section}
+{knowledge_section}{hardware_section}
 ## Available Actions
 You can take actions on behalf of the user. If the user asks you to water, adjust \
 light, etc., include the appropriate action in your response.
@@ -407,6 +459,9 @@ light, etc., include the appropriate action in your response.
 4. If the user is just asking a question, respond with just a "message" and empty actions.
 5. Be CONSERVATIVE with actions. "water it a bit" means short duration (5s). "give it a good watering" means longer (15-20s).
 6. You can log observations about the conversation in the "observations" array.
+7. The user can tell you about their hardware (e.g. "the pump does about 20ml/sec", "I have a 3L pot"). \
+When they do, include a "hardware_update" dict with dot-notation keys (e.g. "pump.flow_rate_ml_per_sec": 20). \
+Set to null when no update is needed.
 
 ## Response Format
 Respond with ONLY a valid JSON object:
@@ -472,6 +527,40 @@ def build_chat_user_prompt(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _format_hardware_profile(hw: dict[str, Any]) -> str:
+    """Format hardware profile dict into a readable text block."""
+    lines: list[str] = []
+
+    pump = hw.get("pump", {})
+    if pump:
+        lines.append(f"- Water pump: {pump.get('type', 'unknown')}, "
+                      f"~{pump.get('flow_rate_ml_per_sec', '?')} ml/sec")
+
+    pot = hw.get("pot", {})
+    if pot:
+        parts = [f"{pot.get('volume_liters', '?')}L {pot.get('material', '')}"]
+        if pot.get("has_drainage"):
+            parts.append("with drainage")
+        lines.append(f"- Pot: {' '.join(parts)}")
+
+    light = hw.get("grow_light", {})
+    if light:
+        lines.append(f"- Grow light: {light.get('type', '?')} "
+                      f"{light.get('wattage', '?')}W, "
+                      f"{light.get('height_cm', '?')}cm from canopy")
+
+    heater = hw.get("heater", {})
+    if heater:
+        lines.append(f"- Heater: {heater.get('type', '?')} "
+                      f"{heater.get('wattage', '?')}W")
+
+    fan = hw.get("circulation_fan", {})
+    if fan:
+        lines.append(f"- Circulation fan: {fan.get('type', '?')}")
+
+    return "\n".join(lines) if lines else "No hardware profile configured."
 
 
 def _format_ideal_conditions(ideal: dict[str, Any]) -> str:

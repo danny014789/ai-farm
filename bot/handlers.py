@@ -29,7 +29,7 @@ from bot.keyboards import (
 from src.action_executor import ActionExecutor
 from src.actuator_state import load_actuator_state, update_after_action
 from src.claude_client import get_chat_response
-from src.config_loader import load_plant_profile, save_plant_profile
+from src.config_loader import load_hardware_profile, load_plant_profile, save_hardware_profile, save_plant_profile
 from src.logger import load_recent_decisions, load_recent_plant_log, log_plant_observations
 from src.plant_knowledge import ensure_plant_knowledge
 from src.safety import validate_action
@@ -826,6 +826,10 @@ async def chat_message_handler(
     # Load context
     data_dir = str(_data_dir(context))
     profile = load_plant_profile()
+    try:
+        hardware_profile = load_hardware_profile()
+    except FileNotFoundError:
+        hardware_profile = {}
     history = load_recent_decisions(10, data_dir)
     plant_log = load_recent_plant_log(20, data_dir)
     actuator_state = load_actuator_state(data_dir)
@@ -843,6 +847,7 @@ async def chat_message_handler(
             history=history,
             actuator_state=actuator_state,
             plant_log=plant_log,
+            hardware_profile=hardware_profile,
         )
     except Exception as exc:
         logger.exception("Chat AI call failed")
@@ -889,6 +894,23 @@ async def chat_message_handler(
     observations = response.get("observations", [])
     if observations:
         log_plant_observations(observations, data_dir, source="chat")
+
+    # Apply hardware updates
+    hw_update = response.get("hardware_update")
+    if hw_update and isinstance(hw_update, dict):
+        for dotkey, value in hw_update.items():
+            parts = dotkey.split(".")
+            target = hardware_profile
+            for part in parts[:-1]:
+                if part not in target or not isinstance(target[part], dict):
+                    target[part] = {}
+                target = target[part]
+            target[parts[-1]] = value
+        try:
+            save_hardware_profile(hardware_profile)
+            logger.info("Hardware profile updated via chat: %s", hw_update)
+        except Exception as exc:
+            logger.error("Failed to save hardware profile: %s", exc)
 
     # Build reply
     reply = response.get("message", "")

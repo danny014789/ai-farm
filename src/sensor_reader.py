@@ -46,6 +46,7 @@ def read_sensors(
     farmctl_path: str,
     attempts: int = 3,
     read_seconds: float = 2.0,
+    soil_cal: tuple[int, int] | None = None,
 ) -> SensorData:
     """Read current sensor data by calling farmctl.py status --json.
 
@@ -56,6 +57,8 @@ def read_sensors(
         farmctl_path: Path to the farmctl.py script.
         attempts: Number of retry attempts before giving up.
         read_seconds: Seconds to wait for farmctl.py to respond.
+        soil_cal: Optional (dry, wet) ADC calibration tuple. Falls back
+            to module-level SOIL_RAW_DRY / SOIL_RAW_WET if not provided.
 
     Returns:
         Parsed sensor data.
@@ -85,7 +88,7 @@ def read_sensors(
                 raise SensorReadError("farmctl.py returned empty output")
 
             data = json.loads(raw)
-            return _parse_sensor_json(data)
+            return _parse_sensor_json(data, soil_cal=soil_cal)
 
         except subprocess.TimeoutExpired:
             last_error = SensorReadError(
@@ -117,7 +120,10 @@ def read_sensors(
     )
 
 
-def _parse_sensor_json(data: dict) -> SensorData:
+def _parse_sensor_json(
+    data: dict,
+    soil_cal: tuple[int, int] | None = None,
+) -> SensorData:
     """Parse and validate raw JSON dict into SensorData.
 
     Handles field name mapping from farmctl.py output format:
@@ -133,6 +139,7 @@ def _parse_sensor_json(data: dict) -> SensorData:
 
     Args:
         data: Raw dict from farmctl.py JSON output.
+        soil_cal: Optional (dry, wet) ADC calibration tuple.
 
     Returns:
         Validated SensorData.
@@ -174,11 +181,13 @@ def _parse_sensor_json(data: dict) -> SensorData:
 
         # Convert soil raw ADC (0-1023) to percentage if the value came
         # from "soil_raw". Values already in 0-100 range pass through.
+        raw_dry = soil_cal[0] if soil_cal else SOIL_RAW_DRY
+        raw_wet = soil_cal[1] if soil_cal else SOIL_RAW_WET
         soil_value = float(resolved["soil_moisture"])
         if soil_value > 100:
             # Raw ADC value -- convert to percentage (high raw = dry)
             soil_moisture_pct = max(0.0, min(100.0,
-                (SOIL_RAW_DRY - soil_value) / (SOIL_RAW_DRY - SOIL_RAW_WET) * 100
+                (raw_dry - soil_value) / (raw_dry - raw_wet) * 100
             ))
             soil_moisture_pct = round(soil_moisture_pct, 1)
         else:

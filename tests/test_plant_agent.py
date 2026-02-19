@@ -99,6 +99,7 @@ def _common_patches():
         "update_actuator": patch("src.plant_agent.update_after_action"),
         "load_plant_log": patch("src.plant_agent.load_recent_plant_log", return_value=[]),
         "log_observations": patch("src.plant_agent.log_plant_observations"),
+        "hardware_profile": patch("src.plant_agent.load_hardware_profile", return_value={}),
     }
 
 
@@ -115,7 +116,8 @@ class TestRunCheck:
              patches["decision"], patches["validate"], patches["log_sensor"], \
              patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
              patches["actuator_state"], patches["update_actuator"], \
-             patches["load_plant_log"], patches["log_observations"]:
+             patches["load_plant_log"], patches["log_observations"], \
+             patches["hardware_profile"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result()
@@ -132,7 +134,7 @@ class TestRunCheck:
         expected_keys = {
             "timestamp", "sensor_data", "decision",
             "actions_taken", "executed", "photo_path", "error", "mode",
-            "observations", "knowledge_update",
+            "observations", "knowledge_update", "hardware_update",
         }
         assert set(summary.keys()) == expected_keys
 
@@ -142,7 +144,8 @@ class TestRunCheck:
              patches["decision"], patches["validate"], patches["log_sensor"], \
              patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
              patches["actuator_state"], patches["update_actuator"], \
-             patches["load_plant_log"], patches["log_observations"]:
+             patches["load_plant_log"], patches["log_observations"], \
+             patches["hardware_profile"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result()
@@ -165,7 +168,8 @@ class TestRunCheck:
              patches["decision"], patches["validate"], patches["log_sensor"], \
              patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
              patches["actuator_state"], patches["update_actuator"], \
-             patches["load_plant_log"], patches["log_observations"]:
+             patches["load_plant_log"], patches["log_observations"], \
+             patches["hardware_profile"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result()
@@ -187,7 +191,8 @@ class TestRunCheck:
              patches["decision"], patches["validate"], patches["log_sensor"], \
              patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
              patches["actuator_state"], patches["update_actuator"], \
-             patches["load_plant_log"], patches["log_observations"]:
+             patches["load_plant_log"], patches["log_observations"], \
+             patches["hardware_profile"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result(dry_run=False)
@@ -217,7 +222,8 @@ class TestRunCheckDryRun:
              patches["decision"], patches["validate"], patches["log_sensor"], \
              patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
              patches["actuator_state"], patches["update_actuator"], \
-             patches["load_plant_log"], patches["log_observations"]:
+             patches["load_plant_log"], patches["log_observations"], \
+             patches["hardware_profile"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result()
@@ -257,6 +263,7 @@ class TestRunCheckFallback:
              patch("src.plant_agent.update_after_action"), \
              patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
              patch("src.plant_agent.log_plant_observations"), \
+             patch("src.plant_agent.load_hardware_profile", return_value={}), \
              patch("src.plant_agent.ActionExecutor") as mock_exec_cls:
 
             mock_executor = MagicMock()
@@ -293,6 +300,7 @@ class TestRunCheckFallback:
              patch("src.plant_agent.update_after_action"), \
              patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
              patch("src.plant_agent.log_plant_observations"), \
+             patch("src.plant_agent.load_hardware_profile", return_value={}), \
              patch("src.plant_agent.ActionExecutor") as mock_exec_cls:
 
             mock_executor = MagicMock()
@@ -329,6 +337,7 @@ class TestRunCheckFallback:
              patch("src.plant_agent.update_after_action"), \
              patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
              patch("src.plant_agent.log_plant_observations"), \
+             patch("src.plant_agent.load_hardware_profile", return_value={}), \
              patch("src.plant_agent.ActionExecutor") as mock_exec_cls:
 
             mock_executor = MagicMock()
@@ -564,6 +573,7 @@ class TestRunCheckSafetyRejection:
              patch("src.plant_agent.update_after_action"), \
              patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
              patch("src.plant_agent.log_plant_observations"), \
+             patch("src.plant_agent.load_hardware_profile", return_value={}), \
              patch("src.plant_agent.ActionExecutor") as mock_exec_cls:
 
             mock_executor = MagicMock()

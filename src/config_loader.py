@@ -60,6 +60,15 @@ def load_plant_profile() -> dict[str, Any]:
     return load_yaml(CONFIG_DIR / "plant_profile.yaml")
 
 
+def load_hardware_profile() -> dict[str, Any]:
+    """Load config/hardware_profile.yaml.
+
+    Returns:
+        Hardware profile configuration dict.
+    """
+    return load_yaml(CONFIG_DIR / "hardware_profile.yaml")
+
+
 def save_plant_profile(profile: dict[str, Any]) -> None:
     """Write plant profile back to config/plant_profile.yaml.
 
@@ -67,6 +76,19 @@ def save_plant_profile(profile: dict[str, Any]) -> None:
         profile: Plant profile dict to save.
     """
     filepath = CONFIG_DIR / "plant_profile.yaml"
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(filepath, "w") as f:
+        yaml.dump(profile, f, default_flow_style=False, sort_keys=False)
+
+
+def save_hardware_profile(profile: dict[str, Any]) -> None:
+    """Write hardware profile back to config/hardware_profile.yaml.
+
+    Args:
+        profile: Hardware profile dict to save.
+    """
+    filepath = CONFIG_DIR / "hardware_profile.yaml"
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
     with open(filepath, "w") as f:

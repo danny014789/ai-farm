@@ -227,6 +227,7 @@ def get_plant_decision(
     photo_path: str | None = None,
     actuator_state: dict[str, str] | None = None,
     plant_log: list[dict[str, Any]] | None = None,
+    hardware_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Call Claude to get a plant care decision based on current conditions.
 
@@ -255,7 +256,7 @@ def get_plant_decision(
 
     current_time = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    system_prompt = build_system_prompt(plant_profile, plant_knowledge)
+    system_prompt = build_system_prompt(plant_profile, plant_knowledge, hardware_profile)
     user_content = build_user_prompt(
         sensor_data=sensor_data,
         history=history,
@@ -339,6 +340,7 @@ def get_plant_decision(
     decision.setdefault("message", "")
     decision.setdefault("observations", [])
     decision.setdefault("knowledge_update", None)
+    decision.setdefault("hardware_update", None)
 
     return decision
 
@@ -351,6 +353,7 @@ def get_chat_response(
     history: list[dict[str, Any]],
     actuator_state: dict[str, str] | None = None,
     plant_log: list[dict[str, Any]] | None = None,
+    hardware_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Call Claude to respond to a user's natural language message.
 
@@ -380,7 +383,7 @@ def get_chat_response(
 
     current_time = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    system_prompt = build_chat_system_prompt(plant_profile, plant_knowledge)
+    system_prompt = build_chat_system_prompt(plant_profile, plant_knowledge, hardware_profile)
     user_content = build_chat_user_prompt(
         user_message=user_message,
         sensor_data=sensor_data,
@@ -429,6 +432,7 @@ def get_chat_response(
     result.setdefault("message", "I'm not sure how to respond to that.")
     result.setdefault("actions", [])
     result.setdefault("observations", [])
+    result.setdefault("hardware_update", None)
 
     # Fill defaults per action
     for act in result.get("actions", []):
