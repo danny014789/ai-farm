@@ -380,7 +380,12 @@ def apply_hardware_update(
 
 
 def format_summary_text(summary: dict) -> str:
-    """Format a check summary into a human-readable Telegram message.
+    """Format a check summary into a concise Telegram message.
+
+    Concise by default: one-line status bar + Claude's message.
+    Verbose detail (full sensor dump, action reasons, AI notes) is
+    included only when urgency is attention/critical, an action was
+    rejected by safety, or an error occurred.
 
     Args:
         summary: The dict returned by run_check().
@@ -388,73 +393,91 @@ def format_summary_text(summary: dict) -> str:
     Returns:
         Formatted string suitable for Telegram.
     """
-    lines = []
-    ts = summary.get("timestamp", "")[:19].replace("T", " ")
-    lines.append(f"🌱 Plant Check — {ts}")
-    lines.append(f"Mode: {summary.get('mode', 'unknown')}")
-    lines.append("")
-
-    # Claude's natural language message (if present)
     dec = summary.get("decision")
+    sd = summary.get("sensor_data")
+    actions_taken = summary.get("actions_taken", [])
+    urgency = dec.get("urgency", "normal") if dec else "normal"
+    error = summary.get("error")
+
+    verbose = (
+        urgency in ("attention", "critical")
+        or error
+        or any(at.get("safety_reason") for at in actions_taken)
+    )
+
+    lines: list[str] = []
+
+    # --- Status bar: one-line snapshot ---
+    urgency_icon = {"normal": "🟢", "attention": "🟡", "critical": "🔴"}.get(
+        urgency, "⚪"
+    )
+    status_parts = [urgency_icon]
+    if sd:
+        status_parts.append(f"{sd['temperature_c']}°C")
+        status_parts.append(f"💧{sd['soil_moisture_pct']}%")
+        if sd.get("water_tank_ok") is not None:
+            tank = "🪣OK" if sd["water_tank_ok"] else "🪣LOW⚠️"
+            status_parts.append(tank)
+    lines.append(" | ".join(status_parts))
+
+    # --- Actions executed (only if something happened) ---
+    executed = [at for at in actions_taken if at.get("executed")]
+    if executed:
+        parts = []
+        for at in executed:
+            name = at.get("action", "?")
+            params = at.get("params", {})
+            dur = params.get("duration_sec")
+            parts.append(f"⚡ {name}" + (f" {dur}s" if dur else ""))
+        lines.append(" ".join(parts))
+
+    # --- Claude's natural language message ---
     message = dec.get("message", "") if dec else ""
     if message:
+        lines.append("")
         lines.append(message)
-        lines.append("")
 
-    sd = summary.get("sensor_data")
-    if sd:
-        lines.append("📊 Sensors:")
-        lines.append(f"  🌡 Temp: {sd['temperature_c']}°C")
-        lines.append(f"  💧 Humidity: {sd['humidity_pct']}%")
-        lines.append(f"  🌿 Soil: {sd['soil_moisture_pct']}%")
-        lines.append(f"  💨 CO2: {sd['co2_ppm']} ppm")
-        lines.append(f"  ☀️ Light: {sd['light_level']}")
-        if sd.get("water_tank_ok") is not None:
-            tank_str = "OK" if sd["water_tank_ok"] else "LOW ⚠️"
-            lines.append(f"  🪣 Water tank: {tank_str}")
-        if sd.get("heater_lockout"):
-            lines.append("  🔒 Heater lockout: ACTIVE")
-        lines.append("")
+    # --- Error ---
+    if error:
+        lines.append(f"\n⚠️ Error: {error}")
 
-    if dec:
-        urgency = dec.get("urgency", "normal")
-        urgency_icon = {"normal": "🟢", "attention": "🟡", "critical": "🔴"}.get(
-            urgency, "⚪"
-        )
-        actions = dec.get("actions", [])
-        if actions:
-            action_names = ", ".join(a.get("action", "?") for a in actions)
-            lines.append(f"🤖 Decision: {action_names} {urgency_icon}")
-            for a in actions:
-                lines.append(f"  - {a.get('action', '?')}: {a.get('reason', '')}")
-        else:
-            lines.append(f"🤖 Decision: no actions {urgency_icon}")
-        if dec.get("notes"):
-            lines.append(f"  Notes: {dec['notes']}")
-        lines.append("")
+    # --- Safety rejections (always shown) ---
+    rejected = [at for at in actions_taken if at.get("safety_reason")]
+    if rejected:
+        for at in rejected:
+            lines.append(f"❌ {at.get('action', '?')}: {at['safety_reason']}")
 
-    actions_taken = summary.get("actions_taken", [])
-    if actions_taken:
-        for at in actions_taken:
-            name = at.get("action", "?")
-            if at.get("executed"):
-                lines.append(f"⚡ {name}: executed")
-            elif at.get("safety_reason"):
-                lines.append(f"❌ {name}: rejected — {at['safety_reason']}")
-            else:
-                lines.append(f"⏸ {name}: not executed")
-    elif summary.get("error"):
-        lines.append(f"⚠️ Error: {summary['error']}")
-    else:
-        lines.append("⏸ No actions taken")
+    # --- Verbose sections (only for attention/critical/error) ---
+    if verbose:
+        if sd:
+            lines.append("")
+            lines.append("📊 Sensors:")
+            lines.append(f"  🌡 Temp: {sd['temperature_c']}°C")
+            lines.append(f"  💧 Humidity: {sd['humidity_pct']}%")
+            lines.append(f"  🌿 Soil: {sd['soil_moisture_pct']}%")
+            lines.append(f"  💨 CO2: {sd['co2_ppm']} ppm")
+            lines.append(f"  ☀️ Light: {sd['light_level']}")
+            if sd.get("water_tank_ok") is not None:
+                tank_str = "OK" if sd["water_tank_ok"] else "LOW ⚠️"
+                lines.append(f"  🪣 Water tank: {tank_str}")
+            if sd.get("heater_lockout"):
+                lines.append("  🔒 Heater lockout: ACTIVE")
 
-    # AI observations section
-    observations = summary.get("observations", [])
-    if observations:
-        lines.append("")
-        lines.append("📝 AI Notes:")
-        for obs in observations:
-            lines.append(f"  - {obs}")
+        if dec:
+            actions = dec.get("actions", [])
+            if actions:
+                lines.append("")
+                for a in actions:
+                    lines.append(f"  - {a.get('action', '?')}: {a.get('reason', '')}")
+            if dec.get("notes"):
+                lines.append(f"  Notes: {dec['notes']}")
+
+        observations = summary.get("observations", [])
+        if observations:
+            lines.append("")
+            lines.append("📝 AI Notes:")
+            for obs in observations:
+                lines.append(f"  - {obs}")
 
     return "\n".join(lines)
 

@@ -435,15 +435,13 @@ class TestFormatSummaryText:
         }
         text = format_summary_text(summary)
         assert isinstance(text, str)
-        assert "Plant Check" in text
+        # Concise format: status bar + executed action + message
         assert "24.5" in text
-        assert "62.0" in text
         assert "water" in text
-        assert "Soil is dry" in text
-        assert "executed" in text.lower()
         assert "Your basil needs a drink!" in text
-        assert "AI Notes" in text
-        assert "Soil dropped quickly today" in text
+        # Normal urgency = concise, no verbose sections
+        assert "Sensors" not in text
+        assert "AI Notes" not in text
 
     def test_emoji_indicators(self):
         summary = {
@@ -469,9 +467,9 @@ class TestFormatSummaryText:
             "mode": "live",
         }
         text = format_summary_text(summary)
-        # Check for sensor emoji indicators
-        assert "\U0001f321" in text or "Temp" in text  # thermometer emoji
-        assert "Sensors" in text
+        # Concise format: status bar has temp and urgency icon
+        assert "24.5" in text
+        assert "\U0001f7e2" in text  # green circle for normal urgency
 
     def test_safety_rejected_output(self):
         summary = {
@@ -485,7 +483,7 @@ class TestFormatSummaryText:
             "mode": "dry-run",
         }
         text = format_summary_text(summary)
-        assert "rejected" in text.lower()
+        assert "❌" in text
         assert "Rate limit" in text
 
     def test_error_shown(self):
@@ -661,7 +659,7 @@ class TestAppendKnowledgeUpdate:
 
 
 class TestFormatSummaryTextNewFields:
-    def test_message_appears_before_sensors(self):
+    def test_message_included_in_concise(self):
         summary = {
             "timestamp": "2026-02-18T10:30:00+00:00",
             "sensor_data": {
@@ -685,9 +683,38 @@ class TestFormatSummaryTextNewFields:
             "observations": [],
         }
         text = format_summary_text(summary)
-        msg_pos = text.index("Everything looks great today!")
-        sensor_pos = text.index("Sensors")
-        assert msg_pos < sensor_pos
+        assert "Everything looks great today!" in text
+        # Normal urgency = concise, no verbose sensor section
+        assert "Sensors" not in text
+
+    def test_verbose_on_attention_urgency(self):
+        """Attention/critical urgency triggers full verbose output."""
+        summary = {
+            "timestamp": "2026-02-18T10:30:00+00:00",
+            "sensor_data": {
+                "temperature_c": 24.5,
+                "humidity_pct": 62.0,
+                "co2_ppm": 450,
+                "light_level": 780,
+                "soil_moisture_pct": 45.0,
+            },
+            "decision": {
+                "actions": [{"action": "water", "reason": "Soil dry", "params": {}}],
+                "urgency": "attention",
+                "notes": "Watch closely",
+                "message": "Soil is getting dry.",
+            },
+            "actions_taken": [{"action": "water", "executed": True}],
+            "executed": True,
+            "photo_path": None,
+            "error": None,
+            "mode": "live",
+            "observations": ["Drying fast"],
+        }
+        text = format_summary_text(summary)
+        assert "Sensors" in text
+        assert "AI Notes" in text
+        assert "Drying fast" in text
 
     def test_no_message_field_graceful(self):
         """No crash when message field is missing from decision."""
@@ -707,7 +734,7 @@ class TestFormatSummaryTextNewFields:
             "observations": [],
         }
         text = format_summary_text(summary)
-        assert "Plant Check" in text
+        assert isinstance(text, str)
 
     def test_no_observations_no_ai_notes(self):
         """AI Notes section omitted when no observations."""
