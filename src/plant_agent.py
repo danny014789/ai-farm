@@ -13,6 +13,8 @@ Can be run standalone via CLI for testing, or called from the Telegram bot's
 scheduled job.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import logging
@@ -25,7 +27,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from src.action_executor import ActionExecutor
-from src.actuator_state import load_actuator_state, update_after_action
+from src.actuator_state import reconcile_actuator_state, update_after_action
 from src.claude_client import get_plant_decision
 from src.config_loader import load_hardware_profile, load_plant_profile, save_hardware_profile
 from src.logger import (
@@ -151,8 +153,8 @@ def run_check(
         except Exception as e:
             logger.warning("Failed to load plant knowledge: %s", e)
 
-    # --- 4. Load actuator state and plant log ---
-    actuator_state = load_actuator_state(data_dir)
+    # --- 4. Load actuator state (reconciled with hardware) and plant log ---
+    actuator_state = reconcile_actuator_state(sensor_data.to_dict(), data_dir)
     plant_log = load_recent_plant_log(20, data_dir)
 
     # --- 5. Ask Claude for decision ---
@@ -355,6 +357,11 @@ def format_summary_text(summary: dict) -> str:
         lines.append(f"  🌿 Soil: {sd['soil_moisture_pct']}%")
         lines.append(f"  💨 CO2: {sd['co2_ppm']} ppm")
         lines.append(f"  ☀️ Light: {sd['light_level']}")
+        if sd.get("water_tank_ok") is not None:
+            tank_str = "OK" if sd["water_tank_ok"] else "LOW ⚠️"
+            lines.append(f"  🪣 Water tank: {tank_str}")
+        if sd.get("heater_lockout"):
+            lines.append("  🔒 Heater lockout: ACTIVE")
         lines.append("")
 
     if dec:

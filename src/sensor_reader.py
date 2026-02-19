@@ -4,6 +4,8 @@ Reads sensor data from farmctl.py via subprocess, parses JSON output.
 Includes mock mode for local development without hardware.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import subprocess
@@ -22,14 +24,25 @@ SOIL_RAW_WET = 300   # ADC reading in saturated soil
 
 @dataclass
 class SensorData:
-    """Sensor readings from the Arduino via farmctl.py."""
+    """Sensor readings and hardware state from the Arduino via farmctl.py."""
 
+    # --- Sensor readings (always present) ---
     temperature_c: float
     humidity_pct: float
     co2_ppm: int
     light_level: int
     soil_moisture_pct: float
     timestamp: str
+
+    # --- Hardware state (None when unavailable, e.g., mock mode or old firmware) ---
+    water_tank_ok: Optional[bool] = None
+    light_on: Optional[bool] = None
+    heater_on: Optional[bool] = None
+    heater_lockout: Optional[bool] = None
+    water_pump_on: Optional[bool] = None
+    circulation_on: Optional[bool] = None
+    water_pump_remaining_sec: Optional[int] = None
+    circulation_remaining_sec: Optional[int] = None
 
     def to_dict(self) -> dict:
         """Convert to a plain dict for serialization."""
@@ -193,6 +206,16 @@ def _parse_sensor_json(
         else:
             soil_moisture_pct = soil_value
 
+        # Optional hardware state fields (present when firmware reports them)
+        water_tank_ok = data.get("water_tank_ok")
+        light_on = data.get("light_on")
+        heater_on = data.get("heater_on")
+        heater_lockout = data.get("heater_lockout")
+        water_pump_on = data.get("water_pump_on")
+        circulation_on = data.get("circulation_on")
+        water_pump_remaining_sec = data.get("water_pump_remaining_sec")
+        circulation_remaining_sec = data.get("circulation_remaining_sec")
+
         return SensorData(
             temperature_c=temperature_c,
             humidity_pct=humidity_pct,
@@ -203,6 +226,14 @@ def _parse_sensor_json(
                 "timestamp",
                 datetime.now(timezone.utc).isoformat(),
             ),
+            water_tank_ok=water_tank_ok,
+            light_on=light_on,
+            heater_on=heater_on,
+            heater_lockout=heater_lockout,
+            water_pump_on=water_pump_on,
+            circulation_on=circulation_on,
+            water_pump_remaining_sec=water_pump_remaining_sec,
+            circulation_remaining_sec=circulation_remaining_sec,
         )
     except (ValueError, TypeError) as e:
         raise SensorReadError(f"Invalid sensor data types: {e}") from e
@@ -224,4 +255,12 @@ def read_sensors_mock() -> SensorData:
         light_level=780,
         soil_moisture_pct=45.0,
         timestamp=datetime.now(timezone.utc).isoformat(),
+        water_tank_ok=True,
+        light_on=False,
+        heater_on=False,
+        heater_lockout=False,
+        water_pump_on=False,
+        circulation_on=False,
+        water_pump_remaining_sec=0,
+        circulation_remaining_sec=0,
     )

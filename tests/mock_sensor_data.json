@@ -5,7 +5,15 @@
     "co2_ppm": 450,
     "light_level": 780,
     "soil_moisture_pct": 45.0,
-    "timestamp": "2026-02-18T10:30:00Z"
+    "timestamp": "2026-02-18T10:30:00Z",
+    "water_tank_ok": true,
+    "light_on": false,
+    "heater_on": false,
+    "heater_lockout": false,
+    "water_pump_on": false,
+    "circulation_on": false,
+    "water_pump_remaining_sec": 0,
+    "circulation_remaining_sec": 0
   },
   "dry_soil": {
     "temperature_c": 25.0,
@@ -13,7 +21,15 @@
     "co2_ppm": 420,
     "light_level": 800,
     "soil_moisture_pct": 18.0,
-    "timestamp": "2026-02-18T14:00:00Z"
+    "timestamp": "2026-02-18T14:00:00Z",
+    "water_tank_ok": true,
+    "light_on": true,
+    "heater_on": false,
+    "heater_lockout": false,
+    "water_pump_on": false,
+    "circulation_on": false,
+    "water_pump_remaining_sec": 0,
+    "circulation_remaining_sec": 0
   },
   "too_hot": {
     "temperature_c": 33.0,
@@ -21,7 +37,15 @@
     "co2_ppm": 380,
     "light_level": 950,
     "soil_moisture_pct": 35.0,
-    "timestamp": "2026-02-18T15:30:00Z"
+    "timestamp": "2026-02-18T15:30:00Z",
+    "water_tank_ok": true,
+    "light_on": true,
+    "heater_on": false,
+    "heater_lockout": false,
+    "water_pump_on": false,
+    "circulation_on": false,
+    "water_pump_remaining_sec": 0,
+    "circulation_remaining_sec": 0
   },
   "too_cold": {
     "temperature_c": 8.0,
@@ -29,7 +53,15 @@
     "co2_ppm": 500,
     "light_level": 50,
     "soil_moisture_pct": 60.0,
-    "timestamp": "2026-02-18T04:00:00Z"
+    "timestamp": "2026-02-18T04:00:00Z",
+    "water_tank_ok": true,
+    "light_on": false,
+    "heater_on": true,
+    "heater_lockout": false,
+    "water_pump_on": false,
+    "circulation_on": false,
+    "water_pump_remaining_sec": 0,
+    "circulation_remaining_sec": 0
   },
   "high_humidity": {
     "temperature_c": 26.0,
@@ -37,7 +69,15 @@
     "co2_ppm": 480,
     "light_level": 600,
     "soil_moisture_pct": 75.0,
-    "timestamp": "2026-02-18T08:00:00Z"
+    "timestamp": "2026-02-18T08:00:00Z",
+    "water_tank_ok": true,
+    "light_on": true,
+    "heater_on": false,
+    "heater_lockout": false,
+    "water_pump_on": false,
+    "circulation_on": false,
+    "water_pump_remaining_sec": 0,
+    "circulation_remaining_sec": 0
   },
   "nighttime": {
     "temperature_c": 20.0,
@@ -45,6 +85,30 @@
     "co2_ppm": 520,
     "light_level": 5,
     "soil_moisture_pct": 50.0,
-    "timestamp": "2026-02-18T02:00:00Z"
+    "timestamp": "2026-02-18T02:00:00Z",
+    "water_tank_ok": true,
+    "light_on": false,
+    "heater_on": false,
+    "heater_lockout": false,
+    "water_pump_on": false,
+    "circulation_on": false,
+    "water_pump_remaining_sec": 0,
+    "circulation_remaining_sec": 0
+  },
+  "water_tank_low": {
+    "temperature_c": 24.0,
+    "humidity_pct": 60.0,
+    "co2_ppm": 440,
+    "light_level": 700,
+    "soil_moisture_pct": 20.0,
+    "timestamp": "2026-02-18T12:00:00Z",
+    "water_tank_ok": false,
+    "light_on": true,
+    "heater_on": false,
+    "heater_lockout": false,
+    "water_pump_on": false,
+    "circulation_on": false,
+    "water_pump_remaining_sec": 0,
+    "circulation_remaining_sec": 0
   }
 }

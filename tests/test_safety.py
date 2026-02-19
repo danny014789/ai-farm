@@ -351,6 +351,37 @@ class TestWaterValidation:
         )
         assert result.valid is True
 
+    def test_water_rejected_when_tank_low(self):
+        """Watering is blocked when water tank level is LOW."""
+        sensor = _make_sensor_data(water_tank_ok=False)
+        result = validate_action(
+            {"action": "water", "duration_sec": 10},
+            sensor,
+            [],
+        )
+        assert result.valid is False
+        assert "tank" in result.reason.lower()
+
+    def test_water_allowed_when_tank_ok(self):
+        """Watering is allowed when water tank level is OK."""
+        sensor = _make_sensor_data(water_tank_ok=True)
+        result = validate_action(
+            {"action": "water", "duration_sec": 10},
+            sensor,
+            [],
+        )
+        assert result.valid is True
+
+    def test_water_allowed_when_tank_unknown(self):
+        """Watering is allowed when water tank status is unknown (None)."""
+        sensor = _make_sensor_data()  # water_tank_ok defaults to None
+        result = validate_action(
+            {"action": "water", "duration_sec": 10},
+            sensor,
+            [],
+        )
+        assert result.valid is True
+
     def test_water_daily_max_count(self):
         """Reject water when daily_max_count (6) is reached."""
         # All 6 waterings happened more than 60 min ago (avoids interval check)
@@ -416,6 +447,37 @@ class TestHeaterValidation:
     def test_heater_on_allowed_below_max(self):
         """Allow heater_on when temp < max_temp_c."""
         sensor = _make_sensor_data(temperature_c=20.0)
+        result = validate_action(
+            {"action": "heater_on"},
+            sensor,
+            [],
+        )
+        assert result.valid is True
+
+    def test_heater_on_rejected_when_lockout_active(self):
+        """Cannot turn heater on when firmware lockout is active."""
+        sensor = _make_sensor_data(temperature_c=20.0, heater_lockout=True)
+        result = validate_action(
+            {"action": "heater_on"},
+            sensor,
+            [],
+        )
+        assert result.valid is False
+        assert "lockout" in result.reason.lower()
+
+    def test_heater_on_allowed_when_lockout_inactive(self):
+        """Heater on is allowed when lockout is not active."""
+        sensor = _make_sensor_data(temperature_c=20.0, heater_lockout=False)
+        result = validate_action(
+            {"action": "heater_on"},
+            sensor,
+            [],
+        )
+        assert result.valid is True
+
+    def test_heater_on_allowed_when_lockout_unknown(self):
+        """Heater on is allowed when lockout status is unknown (None)."""
+        sensor = _make_sensor_data(temperature_c=20.0)  # heater_lockout defaults to None
         result = validate_action(
             {"action": "heater_on"},
             sensor,

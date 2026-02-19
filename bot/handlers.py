@@ -27,7 +27,7 @@ from bot.keyboards import (
     plant_stage_keyboard,
 )
 from src.action_executor import ActionExecutor
-from src.actuator_state import load_actuator_state, update_after_action
+from src.actuator_state import reconcile_actuator_state, update_after_action
 from src.claude_client import get_chat_response
 from src.config_loader import load_hardware_profile, load_plant_profile, save_hardware_profile, save_plant_profile
 from src.logger import load_recent_decisions, load_recent_plant_log, log_plant_observations
@@ -152,8 +152,22 @@ def _format_sensor_data(data: SensorData) -> str:
         f"CO2:  {data.co2_ppm} ppm",
         f"Light:  {data.light_level}",
         f"Soil moisture:  {data.soil_moisture_pct:.1f}%",
-        f"Timestamp: {data.timestamp}",
     ]
+    # Hardware state (when available from firmware)
+    if data.water_tank_ok is not None:
+        lines.append(f"Water tank:  {'OK' if data.water_tank_ok else 'LOW'}")
+    if data.light_on is not None:
+        lines.append(f"Grow light:  {'ON' if data.light_on else 'OFF'}")
+    if data.heater_on is not None:
+        heater_str = "ON" if data.heater_on else "OFF"
+        if data.heater_lockout:
+            heater_str += " (LOCKOUT)"
+        lines.append(f"Heater:  {heater_str}")
+    if data.water_pump_on and data.water_pump_remaining_sec:
+        lines.append(f"Water pump:  ON ({data.water_pump_remaining_sec}s remaining)")
+    if data.circulation_on and data.circulation_remaining_sec:
+        lines.append(f"Circulation:  ON ({data.circulation_remaining_sec}s remaining)")
+    lines.append(f"Timestamp: {data.timestamp}")
     return "\n".join(lines)
 
 
@@ -832,7 +846,7 @@ async def chat_message_handler(
         hardware_profile = {}
     history = load_recent_decisions(10, data_dir)
     plant_log = load_recent_plant_log(20, data_dir)
-    actuator_state = load_actuator_state(data_dir)
+    actuator_state = reconcile_actuator_state(sensor_data.to_dict(), data_dir)
     plant_knowledge = ensure_plant_knowledge(
         profile, _bot_data(context, "anthropic_api_key") or ""
     )
@@ -875,7 +889,7 @@ async def chat_message_handler(
             if result.success:
                 mode_tag = " [dry-run]" if result.dry_run else ""
                 action_results.append(f"Executed{mode_tag}: {action_name}")
-                update_after_action(action_name, params, data_dir)
+                update_after_action(action_name, data_dir)
             else:
                 action_results.append(f"Failed: {action_name} - {result.error}")
 

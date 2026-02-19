@@ -4,6 +4,8 @@ Loads YAML configuration files from the config/ directory.
 All paths resolve relative to the project root.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 

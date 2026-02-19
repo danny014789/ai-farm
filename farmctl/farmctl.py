@@ -58,8 +58,9 @@ class SerialClient:
 
 
 def parse_csv_status(line: str) -> Dict[str, Any]:
-    # Expected style (from notes): co2,tempC,rh,lightRaw,soilRaw,... relay flags
-    # Example seen: 609,23.57,67.95,54,1023,1,0,0,0,0,0,0,0
+    # CSV format from Arduino printCSV():
+    # co2,tempC,rh,lightRaw,soilRaw,waterOK,lightOn,heaterOn,heaterLockout,waterOn,circOn,waterRem,circRem
+    # Example: 609,23.57,67.95,54,1023,1,0,0,0,0,0,0,0
     parts = [p.strip() for p in line.split(",") if p.strip() != ""]
     out: Dict[str, Any] = {"raw": line, "fields": parts}
     if len(parts) >= 5:
@@ -71,6 +72,23 @@ def parse_csv_status(line: str) -> Dict[str, Any]:
                     "humidity_pct": float(parts[2]),
                     "light_raw": float(parts[3]),
                     "soil_raw": float(parts[4]),
+                }
+            )
+        except ValueError:
+            pass
+    # Extended fields: relay states, water tank, heater lockout, timers
+    if len(parts) >= 13:
+        try:
+            out.update(
+                {
+                    "water_tank_ok": int(parts[5]) == 1,
+                    "light_on": int(parts[6]) == 1,
+                    "heater_on": int(parts[7]) == 1,
+                    "heater_lockout": int(parts[8]) == 1,
+                    "water_pump_on": int(parts[9]) == 1,
+                    "circulation_on": int(parts[10]) == 1,
+                    "water_pump_remaining_sec": int(parts[11]),
+                    "circulation_remaining_sec": int(parts[12]),
                 }
             )
         except ValueError:

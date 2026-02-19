@@ -32,12 +32,20 @@ VALID_SENSOR_DICT = {
 # Actual farmctl.py output format (different field names + raw ADC values)
 FARMCTL_SENSOR_DICT = {
     "raw": "498,23.62,51.58,53,1023,1,0,0,0,0,0,0,0",
-    "fields": ["498", "23.62", "51.58", "53", "1023"],
+    "fields": ["498", "23.62", "51.58", "53", "1023", "1", "0", "0", "0", "0", "0", "0", "0"],
     "co2_ppm": 498.0,
     "temp_c": 23.62,
     "humidity_pct": 51.58,
     "light_raw": 53.0,
     "soil_raw": 1023.0,
+    "water_tank_ok": True,
+    "light_on": False,
+    "heater_on": False,
+    "heater_lockout": False,
+    "water_pump_on": False,
+    "circulation_on": False,
+    "water_pump_remaining_sec": 0,
+    "circulation_remaining_sec": 0,
     "source": "serial:r",
 }
 
@@ -175,6 +183,39 @@ class TestFarmctlFieldMapping:
         result = _parse_sensor_json(data)
         assert result.temperature_c == 30.0
 
+    def test_hardware_state_parsed_from_farmctl(self):
+        """Full farmctl output with relay flags should populate hardware state."""
+        result = _parse_sensor_json(FARMCTL_SENSOR_DICT)
+        assert result.water_tank_ok is True
+        assert result.light_on is False
+        assert result.heater_on is False
+        assert result.heater_lockout is False
+        assert result.water_pump_on is False
+        assert result.circulation_on is False
+        assert result.water_pump_remaining_sec == 0
+        assert result.circulation_remaining_sec == 0
+
+    def test_hardware_state_none_when_missing(self):
+        """When farmctl output has no relay data, hardware state fields are None."""
+        result = _parse_sensor_json(VALID_SENSOR_DICT)
+        assert result.water_tank_ok is None
+        assert result.light_on is None
+        assert result.heater_on is None
+        assert result.heater_lockout is None
+
+    def test_hardware_state_true_values(self):
+        """Hardware state booleans should be True when reported as True."""
+        data = dict(VALID_SENSOR_DICT)
+        data["light_on"] = True
+        data["heater_on"] = True
+        data["water_tank_ok"] = False
+        data["heater_lockout"] = True
+        result = _parse_sensor_json(data)
+        assert result.light_on is True
+        assert result.heater_on is True
+        assert result.water_tank_ok is False
+        assert result.heater_lockout is True
+
 
 # ---------------------------------------------------------------------------
 # read_sensors_mock
@@ -198,6 +239,17 @@ class TestReadSensorsMock:
         result = read_sensors_mock()
         assert result.timestamp is not None
         assert len(result.timestamp) > 0
+
+    def test_mock_includes_hardware_state(self):
+        result = read_sensors_mock()
+        assert result.water_tank_ok is True
+        assert result.light_on is False
+        assert result.heater_on is False
+        assert result.heater_lockout is False
+        assert result.water_pump_on is False
+        assert result.circulation_on is False
+        assert result.water_pump_remaining_sec == 0
+        assert result.circulation_remaining_sec == 0
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +286,14 @@ class TestSensorDataToDict:
             "light_level",
             "soil_moisture_pct",
             "timestamp",
+            "water_tank_ok",
+            "light_on",
+            "heater_on",
+            "heater_lockout",
+            "water_pump_on",
+            "circulation_on",
+            "water_pump_remaining_sec",
+            "circulation_remaining_sec",
         }
         assert set(d.keys()) == expected_keys
 

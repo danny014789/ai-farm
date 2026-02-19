@@ -294,6 +294,22 @@ class TestFormatSensorData:
         text = _format_sensor_data({})
         assert "N/A" in text
 
+    def test_water_tank_ok_shown(self):
+        data = dict(SAMPLE_SENSOR_DATA, water_tank_ok=True)
+        text = _format_sensor_data(data)
+        assert "Water tank" in text
+        assert "OK" in text
+
+    def test_water_tank_low_shown(self):
+        data = dict(SAMPLE_SENSOR_DATA, water_tank_ok=False)
+        text = _format_sensor_data(data)
+        assert "Water tank" in text
+        assert "LOW" in text
+
+    def test_water_tank_omitted_when_none(self):
+        text = _format_sensor_data(SAMPLE_SENSOR_DATA)
+        assert "Water tank" not in text
+
 
 # ---------------------------------------------------------------------------
 # _format_history

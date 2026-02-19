@@ -7,6 +7,8 @@ pump, lights, heater, circulation fan, camera).
 Supports dry-run mode for local development and testing without hardware.
 """
 
+from __future__ import annotations
+
 import logging
 import subprocess
 from dataclasses import dataclass, asdict

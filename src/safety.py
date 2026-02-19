@@ -4,6 +4,8 @@ Enforces hardcoded safety limits that the AI agent cannot override.
 All actions must pass through validate_action() before execution.
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
@@ -164,7 +166,7 @@ def validate_action(
 
     # 4. Action-specific validation
     if action_type == "water":
-        return _validate_water(capped, limits, history, now)
+        return _validate_water(capped, limits, history, now, sensor_data)
 
     if action_type in ("heater_on", "heater_off"):
         return _validate_heater(capped, limits, sensor_data)
@@ -184,8 +186,17 @@ def _validate_water(
     limits: dict[str, Any],
     history: list[dict[str, Any]],
     now: datetime,
+    sensor_data: SensorData | None = None,
 ) -> ValidationResult:
     """Validate and cap water action."""
+    # Block watering if water tank is low
+    if sensor_data is not None and sensor_data.water_tank_ok is False:
+        return ValidationResult(
+            valid=False,
+            reason="Water tank level is LOW. Refill the tank before watering.",
+            capped_action=action,
+        )
+
     water_limits = limits.get("water", {})
     max_duration = water_limits.get("max_duration_sec", 30)
     min_interval = water_limits.get("min_interval_min", 60)
@@ -244,6 +255,14 @@ def _validate_heater(
     # Turning off is always allowed
     if action_type == "heater_off":
         return ValidationResult(valid=True, reason="OK", capped_action=action)
+
+    # Block heater_on if firmware lockout is active
+    if sensor_data.heater_lockout is True:
+        return ValidationResult(
+            valid=False,
+            reason="Heater lockout is active (firmware safety). Cannot turn heater on.",
+            capped_action=action,
+        )
 
     # Refuse heater_on if temperature is already above max
     if sensor_data.temperature_c >= max_temp:

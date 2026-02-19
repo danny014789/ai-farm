@@ -36,6 +36,14 @@ def mock_sensor_data() -> SensorData:
         light_level=780,
         soil_moisture_pct=45.0,
         timestamp="2026-02-18T10:30:00+00:00",
+        water_tank_ok=True,
+        light_on=False,
+        heater_on=False,
+        heater_lockout=False,
+        water_pump_on=False,
+        circulation_on=False,
+        water_pump_remaining_sec=0,
+        circulation_remaining_sec=0,
     )
 
 
@@ -49,6 +57,14 @@ def mock_sensor_data_dict() -> dict:
         "light_level": 780,
         "soil_moisture_pct": 45.0,
         "timestamp": "2026-02-18T10:30:00+00:00",
+        "water_tank_ok": True,
+        "light_on": False,
+        "heater_on": False,
+        "heater_lockout": False,
+        "water_pump_on": False,
+        "circulation_on": False,
+        "water_pump_remaining_sec": 0,
+        "circulation_remaining_sec": 0,
     }
 
 

@@ -95,7 +95,7 @@ def _common_patches():
         "log_decision": patch("src.plant_agent.log_decision"),
         "load_history": patch("src.plant_agent.load_recent_decisions", return_value=[]),
         "executor_cls": patch("src.plant_agent.ActionExecutor"),
-        "actuator_state": patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}),
+        "actuator_state": patch("src.plant_agent.reconcile_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle", "water_tank": "ok", "heater_lockout": "normal"}),
         "update_actuator": patch("src.plant_agent.update_after_action"),
         "load_plant_log": patch("src.plant_agent.load_recent_plant_log", return_value=[]),
         "log_observations": patch("src.plant_agent.log_plant_observations"),
@@ -259,7 +259,7 @@ class TestRunCheckFallback:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision"), \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
-             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.reconcile_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle", "water_tank": "ok", "heater_lockout": "normal"}), \
              patch("src.plant_agent.update_after_action"), \
              patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
              patch("src.plant_agent.log_plant_observations"), \
@@ -296,7 +296,7 @@ class TestRunCheckFallback:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision"), \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
-             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.reconcile_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle", "water_tank": "ok", "heater_lockout": "normal"}), \
              patch("src.plant_agent.update_after_action"), \
              patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
              patch("src.plant_agent.log_plant_observations"), \
@@ -333,7 +333,7 @@ class TestRunCheckFallback:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision"), \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
-             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.reconcile_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle", "water_tank": "ok", "heater_lockout": "normal"}), \
              patch("src.plant_agent.update_after_action"), \
              patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
              patch("src.plant_agent.log_plant_observations"), \
@@ -569,7 +569,7 @@ class TestRunCheckSafetyRejection:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision"), \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
-             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.reconcile_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle", "water_tank": "ok", "heater_lockout": "normal"}), \
              patch("src.plant_agent.update_after_action"), \
              patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
              patch("src.plant_agent.log_plant_observations"), \
@@ -607,7 +607,7 @@ class TestRunCheckSafetyRejection:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision") as mock_log, \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
-             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.reconcile_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle", "water_tank": "ok", "heater_lockout": "normal"}), \
              patch("src.plant_agent.update_after_action"), \
              patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
              patch("src.plant_agent.log_plant_observations"), \

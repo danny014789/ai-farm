@@ -143,9 +143,9 @@ You may recommend one or more actions per evaluation. Choose from:
 | do_nothing    | No action needed right now         | none                     |
 
 ## Action Constraints
-- Water: duration_sec must be between 1 and 30. Minimum 60 minutes between waterings.
+- Water: duration_sec must be between 1 and 30. Minimum 60 minutes between waterings. Do NOT water if the water tank level is LOW — notify the human to refill instead.
 - Circulation: duration_sec must be between 10 and 300.
-- Heater: Never turn on if temperature is already above {ideal.get("temp_max_c", 28)}C. Never leave on if above {ideal.get("temp_max_c", 28)}C.
+- Heater: Never turn on if temperature is already above {ideal.get("temp_max_c", 28)}C. Never leave on if above {ideal.get("temp_max_c", 28)}C. If heater_lockout is active, the firmware has disabled the heater for safety — do not attempt to turn it on.
 - Light: Respect the plant's light schedule. Do NOT turn on lights between midnight and 5am unless the plant is severely light-deprived. Maximum {ideal.get("light_hours", 14)} hours per day.
 - When in doubt, choose "do_nothing" and set "notify_human" to true.
 
@@ -156,6 +156,8 @@ You may recommend one or more actions per evaluation. Choose from:
 4. If sensor readings look abnormal or contradictory, choose "do_nothing" and set "notify_human" to true with a note explaining the anomaly.
 5. If a photo is provided, examine it for signs of stress, pests, disease, wilting, discoloration, or other visual issues.
 6. Prioritize: critical safety > plant health > optimal growth > energy efficiency.
+7. If the water tank level is LOW, mention it in your message so the human knows to refill.
+8. The "Current Actuator States" section reflects the actual hardware relay states. Use it to know what is currently on or off — do not guess from sensor values alone.
 
 ## Operational Memory
 You have a plant log where past observations are recorded. Use it to track patterns \
@@ -446,9 +448,9 @@ light, etc., include the appropriate action in your response.
 | do_nothing    | none                     |
 
 ## Action Constraints
-- Water: duration_sec 1-30. Minimum 60 minutes between waterings.
+- Water: duration_sec 1-30. Minimum 60 minutes between waterings. Do NOT water if the water tank is LOW — tell the user to refill.
 - Circulation: duration_sec 10-300.
-- Heater: Never turn on above {ideal.get("temp_max_c", 28)}C.
+- Heater: Never turn on above {ideal.get("temp_max_c", 28)}C. If heater_lockout is active, the firmware has disabled the heater for safety — do not attempt to turn it on.
 - Light: Respect light schedule. No lights midnight-5am.
 - When in doubt, ask the user rather than acting.
 
@@ -462,6 +464,8 @@ light, etc., include the appropriate action in your response.
 7. The user can tell you about their hardware (e.g. "the pump does about 20ml/sec", "I have a 3L pot"). \
 When they do, include a "hardware_update" dict with dot-notation keys (e.g. "pump.flow_rate_ml_per_sec": 20). \
 Set to null when no update is needed.
+8. The "Current Actuator States" section reflects the actual hardware relay states. Use it to accurately answer questions about what is on or off.
+9. If the water tank is LOW, proactively mention it so the user knows to refill.
 
 ## Response Format
 Respond with ONLY a valid JSON object:
@@ -584,6 +588,9 @@ def _format_sensor_data(sensor_data: dict[str, Any]) -> str:
         f"- Light level: {sensor_data.get('light_level', 'N/A')}",
         f"- Soil moisture: {sensor_data.get('soil_moisture_pct', 'N/A')}%",
     ]
+    tank = sensor_data.get("water_tank_ok")
+    if tank is not None:
+        lines.append(f"- Water tank: {'OK' if tank else 'LOW - needs refill'}")
     return "\n".join(lines)
 
 
@@ -594,6 +601,8 @@ def _format_actuator_state(state: dict[str, str]) -> str:
         "heater": "Heater",
         "pump": "Water pump",
         "circulation": "Circulation fan",
+        "water_tank": "Water tank level",
+        "heater_lockout": "Heater safety lockout",
     }
     lines = [f"- {labels.get(k, k)}: {v}" for k, v in state.items()]
     return "\n".join(lines)
