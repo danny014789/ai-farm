@@ -703,7 +703,7 @@ async def _research_plant(
         )
 
         response = client.messages.create(
-            model="claude-sonnet-4-6-latest",
+            model="claude-sonnet-4-6",
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )

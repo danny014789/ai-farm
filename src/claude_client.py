@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-DEFAULT_MODEL = "claude-sonnet-4-6-latest"
+DEFAULT_MODEL = "claude-sonnet-4-6"
 MAX_DECISION_TOKENS = 1024
 MAX_RESEARCH_TOKENS = 4096
 MAX_RETRIES = 3
