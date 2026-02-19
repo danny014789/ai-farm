@@ -30,9 +30,13 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 from bot.handlers import (
+    _split_text,
+    chat_message_handler,
     circulation_command,
     confirm_callback,
     heater_command,
@@ -114,7 +118,8 @@ async def scheduled_check(context: ContextTypes.DEFAULT_TYPE) -> None:
 
             for chat_id in chat_ids:
                 try:
-                    await context.bot.send_message(chat_id=chat_id, text=text)
+                    for chunk in _split_text(text):
+                        await context.bot.send_message(chat_id=chat_id, text=chunk)
                     if has_photo:
                         with open(photo_path, "rb") as f:
                             await context.bot.send_photo(
@@ -287,6 +292,11 @@ def main() -> None:
     application.add_handler(CommandHandler("pause", pause_command))
     application.add_handler(CommandHandler("resume", resume_command))
     application.add_handler(CommandHandler("mode", mode_command))
+
+    # Natural language chat handler (catches all non-command text)
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, chat_message_handler)
+    )
 
     # Callback query handler for inline keyboard buttons
     application.add_handler(CallbackQueryHandler(confirm_callback))

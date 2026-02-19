@@ -29,7 +29,9 @@ from src.claude_client import get_plant_decision
 from src.config_loader import load_plant_profile
 from src.logger import (
     load_recent_decisions,
+    load_recent_plant_log,
     log_decision,
+    log_plant_observations,
     log_sensor_reading,
 )
 from src.plant_knowledge import ensure_plant_knowledge
@@ -138,8 +140,9 @@ def run_check(
         except Exception as e:
             logger.warning("Failed to load plant knowledge: %s", e)
 
-    # --- 4. Load actuator state ---
+    # --- 4. Load actuator state and plant log ---
     actuator_state = load_actuator_state(data_dir)
+    plant_log = load_recent_plant_log(20, data_dir)
 
     # --- 5. Ask Claude for decision ---
     decision = None
@@ -151,6 +154,7 @@ def run_check(
             history=history,
             photo_path=photo_path,
             actuator_state=actuator_state,
+            plant_log=plant_log,
         )
         actions_summary = ", ".join(
             a.get("action", "?") for a in decision.get("actions", [])
@@ -227,6 +231,17 @@ def run_check(
     summary["actions_taken"] = actions_taken
     summary["executed"] = any(a["executed"] for a in actions_taken) if actions_taken else False
 
+    # --- 7. Log observations and handle knowledge updates ---
+    observations = decision.get("observations", [])
+    if observations:
+        log_plant_observations(observations, data_dir, source="scheduled_check")
+    summary["observations"] = observations
+
+    knowledge_update = decision.get("knowledge_update")
+    if knowledge_update:
+        _append_knowledge_update(knowledge_update, data_dir)
+    summary["knowledge_update"] = knowledge_update
+
     return summary
 
 
@@ -252,6 +267,21 @@ def _apply_fallback_rules(sensor_data: SensorData) -> dict | None:
     return None
 
 
+def _append_knowledge_update(update_text: str, data_dir: str) -> None:
+    """Append a timestamped AI knowledge update to plant_knowledge.md.
+
+    Args:
+        update_text: The knowledge text to append.
+        data_dir: Path to the data directory.
+    """
+    knowledge_path = Path(data_dir) / "plant_knowledge.md"
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    entry = f"\n\n---\n*AI Update ({ts}):* {update_text}\n"
+    with open(knowledge_path, "a") as f:
+        f.write(entry)
+    logger.info("Appended knowledge update to %s", knowledge_path)
+
+
 def format_summary_text(summary: dict) -> str:
     """Format a check summary into a human-readable Telegram message.
 
@@ -267,6 +297,13 @@ def format_summary_text(summary: dict) -> str:
     lines.append(f"Mode: {summary.get('mode', 'unknown')}")
     lines.append("")
 
+    # Claude's natural language message (if present)
+    dec = summary.get("decision")
+    message = dec.get("message", "") if dec else ""
+    if message:
+        lines.append(message)
+        lines.append("")
+
     sd = summary.get("sensor_data")
     if sd:
         lines.append("📊 Sensors:")
@@ -277,7 +314,6 @@ def format_summary_text(summary: dict) -> str:
         lines.append(f"  ☀️ Light: {sd['light_level']}")
         lines.append("")
 
-    dec = summary.get("decision")
     if dec:
         urgency = dec.get("urgency", "normal")
         urgency_icon = {"normal": "🟢", "attention": "🟡", "critical": "🔴"}.get(
@@ -309,6 +345,14 @@ def format_summary_text(summary: dict) -> str:
         lines.append(f"⚠️ Error: {summary['error']}")
     else:
         lines.append("⏸ No actions taken")
+
+    # AI observations section
+    observations = summary.get("observations", [])
+    if observations:
+        lines.append("")
+        lines.append("📝 AI Notes:")
+        for obs in observations:
+            lines.append(f"  - {obs}")
 
     return "\n".join(lines)
 

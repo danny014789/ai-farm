@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 SENSOR_FILE = "sensor_history.jsonl"
 DECISION_FILE = "decisions.jsonl"
+PLANT_LOG_FILE = "plant_log.jsonl"
 
 
 def _ensure_dir(data_dir: str) -> Path:
@@ -71,6 +72,43 @@ def _read_jsonl(filepath: Path) -> list[dict[str, Any]]:
                     "Skipping malformed JSONL line %d in %s", line_num, filepath
                 )
     return records
+
+
+def log_plant_observations(
+    observations: list[str], data_dir: str, source: str = "scheduled_check"
+) -> None:
+    """Write each observation as a JSONL record to plant_log.jsonl.
+
+    Args:
+        observations: List of observation strings to log.
+        data_dir: Path to the data directory.
+        source: Origin of the observation (e.g. "scheduled_check", "chat").
+    """
+    if not observations:
+        return
+
+    dirpath = _ensure_dir(data_dir)
+    filepath = dirpath / PLANT_LOG_FILE
+    ts = datetime.now(timezone.utc).isoformat()
+
+    for obs in observations:
+        record = {"timestamp": ts, "observation": obs, "source": source}
+        _append_jsonl(filepath, record)
+
+
+def load_recent_plant_log(n: int, data_dir: str) -> list[dict[str, Any]]:
+    """Load the last N plant log entries.
+
+    Args:
+        n: Number of recent entries to return.
+        data_dir: Path to the data directory.
+
+    Returns:
+        List of the most recent N plant log dicts (newest last).
+    """
+    filepath = Path(data_dir) / PLANT_LOG_FILE
+    records = _read_jsonl(filepath)
+    return records[-n:] if n > 0 else []
 
 
 def log_sensor_reading(data: SensorData, data_dir: str) -> None:

@@ -7,6 +7,7 @@ import pytest
 
 from src.plant_agent import (
     FALLBACK_RULES,
+    _append_knowledge_update,
     _apply_fallback_rules,
     format_summary_text,
     run_check,
@@ -48,13 +49,16 @@ SAMPLE_PROFILE = {
 }
 
 SAMPLE_DECISION = {
-    "action": "water",
-    "params": {"duration_sec": 10},
-    "reason": "Soil is dry",
+    "actions": [
+        {"action": "water", "params": {"duration_sec": 10}, "reason": "Soil is dry"},
+    ],
     "urgency": "normal",
     "notify_human": False,
     "assessment": "Plant needs watering",
     "notes": "",
+    "message": "Your basil is a bit thirsty. Giving it a quick drink.",
+    "observations": ["Soil moisture dropped from 55% to 45% in 4 hours"],
+    "knowledge_update": None,
 }
 
 
@@ -91,6 +95,10 @@ def _common_patches():
         "log_decision": patch("src.plant_agent.log_decision"),
         "load_history": patch("src.plant_agent.load_recent_decisions", return_value=[]),
         "executor_cls": patch("src.plant_agent.ActionExecutor"),
+        "actuator_state": patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}),
+        "update_actuator": patch("src.plant_agent.update_after_action"),
+        "load_plant_log": patch("src.plant_agent.load_recent_plant_log", return_value=[]),
+        "log_observations": patch("src.plant_agent.log_plant_observations"),
     }
 
 
@@ -105,7 +113,9 @@ class TestRunCheck:
         patches = _common_patches()
         with patches["read_mock"], patches["profile"], patches["knowledge"], \
              patches["decision"], patches["validate"], patches["log_sensor"], \
-             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls:
+             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
+             patches["actuator_state"], patches["update_actuator"], \
+             patches["load_plant_log"], patches["log_observations"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result()
@@ -121,7 +131,8 @@ class TestRunCheck:
 
         expected_keys = {
             "timestamp", "sensor_data", "decision",
-            "validation", "executed", "photo_path", "error", "mode",
+            "actions_taken", "executed", "photo_path", "error", "mode",
+            "observations", "knowledge_update",
         }
         assert set(summary.keys()) == expected_keys
 
@@ -129,7 +140,9 @@ class TestRunCheck:
         patches = _common_patches()
         with patches["read_mock"], patches["profile"], patches["knowledge"], \
              patches["decision"], patches["validate"], patches["log_sensor"], \
-             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls:
+             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
+             patches["actuator_state"], patches["update_actuator"], \
+             patches["load_plant_log"], patches["log_observations"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result()
@@ -150,7 +163,9 @@ class TestRunCheck:
         patches = _common_patches()
         with patches["read_mock"], patches["profile"], patches["knowledge"], \
              patches["decision"], patches["validate"], patches["log_sensor"], \
-             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls:
+             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
+             patches["actuator_state"], patches["update_actuator"], \
+             patches["load_plant_log"], patches["log_observations"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result()
@@ -170,7 +185,9 @@ class TestRunCheck:
         patches = _common_patches()
         with patches["read_mock"], patches["profile"], patches["knowledge"], \
              patches["decision"], patches["validate"], patches["log_sensor"], \
-             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls:
+             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
+             patches["actuator_state"], patches["update_actuator"], \
+             patches["load_plant_log"], patches["log_observations"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result(dry_run=False)
@@ -198,7 +215,9 @@ class TestRunCheckDryRun:
         patches = _common_patches()
         with patches["read_mock"], patches["profile"], patches["knowledge"], \
              patches["decision"], patches["validate"], patches["log_sensor"], \
-             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls:
+             patches["log_decision"], patches["load_history"], patches["executor_cls"] as mock_exec_cls, \
+             patches["actuator_state"], patches["update_actuator"], \
+             patches["load_plant_log"], patches["log_observations"]:
 
             mock_executor = MagicMock()
             mock_executor.execute.return_value = _make_exec_result()
@@ -234,6 +253,10 @@ class TestRunCheckFallback:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision"), \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
+             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.update_after_action"), \
+             patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
+             patch("src.plant_agent.log_plant_observations"), \
              patch("src.plant_agent.ActionExecutor") as mock_exec_cls:
 
             mock_executor = MagicMock()
@@ -248,8 +271,9 @@ class TestRunCheckFallback:
                 include_photo=False,
             )
 
-        assert summary["decision"]["action"] == "water"
-        assert "fallback" in summary["decision"]["reason"].lower()
+        first_action = summary["decision"]["actions"][0]
+        assert first_action["action"] == "water"
+        assert "fallback" in first_action["reason"].lower()
 
     def test_api_failure_triggers_fallback_temp_cold(self):
         """When Claude API fails and temp < 15, fallback triggers heater_on."""
@@ -265,6 +289,10 @@ class TestRunCheckFallback:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision"), \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
+             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.update_after_action"), \
+             patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
+             patch("src.plant_agent.log_plant_observations"), \
              patch("src.plant_agent.ActionExecutor") as mock_exec_cls:
 
             mock_executor = MagicMock()
@@ -279,8 +307,9 @@ class TestRunCheckFallback:
                 include_photo=False,
             )
 
-        assert summary["decision"]["action"] == "heater_on"
-        assert "fallback" in summary["decision"]["reason"].lower()
+        first_action = summary["decision"]["actions"][0]
+        assert first_action["action"] == "heater_on"
+        assert "fallback" in first_action["reason"].lower()
 
     def test_api_failure_no_fallback_defaults_do_nothing(self):
         """When Claude API fails and no fallback rule matches, decision is do_nothing."""
@@ -296,6 +325,10 @@ class TestRunCheckFallback:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision"), \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
+             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.update_after_action"), \
+             patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
+             patch("src.plant_agent.log_plant_observations"), \
              patch("src.plant_agent.ActionExecutor") as mock_exec_cls:
 
             mock_executor = MagicMock()
@@ -309,7 +342,8 @@ class TestRunCheckFallback:
                 include_photo=False,
             )
 
-        assert summary["decision"]["action"] == "do_nothing"
+        first_action = summary["decision"]["actions"][0]
+        assert first_action["action"] == "do_nothing"
         assert summary["decision"]["notify_human"] is True
 
 
@@ -323,21 +357,21 @@ class TestApplyFallbackRules:
         sensor = _make_sensor_data(soil_moisture_pct=20.0)
         result = _apply_fallback_rules(sensor)
         assert result is not None
-        assert result["action"] == "water"
-        assert "soil" in result["reason"].lower()
+        assert result["actions"][0]["action"] == "water"
+        assert "soil" in result["actions"][0]["reason"].lower()
 
     def test_temp_too_cold(self):
         sensor = _make_sensor_data(temperature_c=12.0, soil_moisture_pct=50.0)
         result = _apply_fallback_rules(sensor)
         assert result is not None
-        assert result["action"] == "heater_on"
-        assert "temperature" in result["reason"].lower()
+        assert result["actions"][0]["action"] == "heater_on"
+        assert "temperature" in result["actions"][0]["reason"].lower()
 
     def test_temp_too_hot(self):
         sensor = _make_sensor_data(temperature_c=35.0, soil_moisture_pct=50.0)
         result = _apply_fallback_rules(sensor)
         assert result is not None
-        assert result["action"] == "heater_off"
+        assert result["actions"][0]["action"] == "heater_off"
 
     def test_no_fallback_normal_conditions(self):
         sensor = _make_sensor_data()
@@ -349,7 +383,7 @@ class TestApplyFallbackRules:
         sensor = _make_sensor_data(soil_moisture_pct=20.0, temperature_c=12.0)
         result = _apply_fallback_rules(sensor)
         # soil_moisture_critical comes first in FALLBACK_RULES dict
-        assert result["action"] == "water"
+        assert result["actions"][0]["action"] == "water"
 
     def test_fallback_contains_urgency_and_notify(self):
         sensor = _make_sensor_data(soil_moisture_pct=20.0)
@@ -376,16 +410,19 @@ class TestFormatSummaryText:
                 "soil_moisture_pct": 45.0,
             },
             "decision": {
-                "action": "water",
-                "reason": "Soil is dry",
+                "actions": [
+                    {"action": "water", "reason": "Soil is dry", "params": {}},
+                ],
                 "urgency": "normal",
                 "notes": "Watch for overwatering",
+                "message": "Your basil needs a drink!",
             },
-            "validation": {"valid": True, "reason": "OK", "capped_action": {}},
+            "actions_taken": [{"action": "water", "executed": True}],
             "executed": True,
             "photo_path": None,
             "error": None,
             "mode": "dry-run",
+            "observations": ["Soil dropped quickly today"],
         }
         text = format_summary_text(summary)
         assert isinstance(text, str)
@@ -394,8 +431,10 @@ class TestFormatSummaryText:
         assert "62.0" in text
         assert "water" in text
         assert "Soil is dry" in text
-        assert "Approved" in text
         assert "executed" in text.lower()
+        assert "Your basil needs a drink!" in text
+        assert "AI Notes" in text
+        assert "Soil dropped quickly today" in text
 
     def test_emoji_indicators(self):
         summary = {
@@ -408,12 +447,13 @@ class TestFormatSummaryText:
                 "soil_moisture_pct": 45.0,
             },
             "decision": {
-                "action": "do_nothing",
-                "reason": "All OK",
+                "actions": [
+                    {"action": "do_nothing", "reason": "All OK", "params": {}},
+                ],
                 "urgency": "normal",
                 "notes": "",
             },
-            "validation": {"valid": True, "reason": "OK", "capped_action": {}},
+            "actions_taken": [{"action": "do_nothing", "executed": True}],
             "executed": True,
             "photo_path": None,
             "error": None,
@@ -429,14 +469,14 @@ class TestFormatSummaryText:
             "timestamp": "2026-02-18T10:30:00+00:00",
             "sensor_data": None,
             "decision": None,
-            "validation": {"valid": False, "reason": "Rate limit exceeded", "capped_action": {}},
+            "actions_taken": [{"action": "water", "executed": False, "safety_reason": "Rate limit exceeded"}],
             "executed": False,
             "photo_path": None,
             "error": None,
             "mode": "dry-run",
         }
         text = format_summary_text(summary)
-        assert "Rejected" in text
+        assert "rejected" in text.lower()
         assert "Rate limit" in text
 
     def test_error_shown(self):
@@ -444,7 +484,7 @@ class TestFormatSummaryText:
             "timestamp": "2026-02-18T10:30:00+00:00",
             "sensor_data": None,
             "decision": None,
-            "validation": None,
+            "actions_taken": [],
             "executed": False,
             "photo_path": None,
             "error": "Sensor read failed",
@@ -459,12 +499,13 @@ class TestFormatSummaryText:
                 "timestamp": "2026-02-18T10:30:00+00:00",
                 "sensor_data": None,
                 "decision": {
-                    "action": "do_nothing",
-                    "reason": "test",
+                    "actions": [
+                        {"action": "do_nothing", "reason": "test", "params": {}},
+                    ],
                     "urgency": urgency,
                     "notes": "",
                 },
-                "validation": None,
+                "actions_taken": [],
                 "executed": False,
                 "photo_path": None,
                 "error": None,
@@ -519,6 +560,10 @@ class TestRunCheckSafetyRejection:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision"), \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
+             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.update_after_action"), \
+             patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
+             patch("src.plant_agent.log_plant_observations"), \
              patch("src.plant_agent.ActionExecutor") as mock_exec_cls:
 
             mock_executor = MagicMock()
@@ -532,7 +577,7 @@ class TestRunCheckSafetyRejection:
                 include_photo=False,
             )
 
-        assert summary["validation"]["valid"] is False
+        assert summary["actions_taken"][0]["executed"] is False
         assert summary["executed"] is False
         # ActionExecutor.execute should NOT have been called
         mock_executor.execute.assert_not_called()
@@ -552,6 +597,10 @@ class TestRunCheckSafetyRejection:
              patch("src.plant_agent.log_sensor_reading"), \
              patch("src.plant_agent.log_decision") as mock_log, \
              patch("src.plant_agent.load_recent_decisions", return_value=[]), \
+             patch("src.plant_agent.load_actuator_state", return_value={"light": "off", "heater": "off", "pump": "idle", "circulation": "idle"}), \
+             patch("src.plant_agent.update_after_action"), \
+             patch("src.plant_agent.load_recent_plant_log", return_value=[]), \
+             patch("src.plant_agent.log_plant_observations"), \
              patch("src.plant_agent.ActionExecutor"):
 
             run_check(
@@ -566,3 +615,107 @@ class TestRunCheckSafetyRejection:
         mock_log.assert_called_once()
         call_kwargs = mock_log.call_args
         assert call_kwargs[1]["executed"] is False or call_kwargs[0][3] is False
+
+
+# ---------------------------------------------------------------------------
+# _append_knowledge_update
+# ---------------------------------------------------------------------------
+
+
+class TestAppendKnowledgeUpdate:
+    def test_creates_file_and_appends(self, tmp_path):
+        """_append_knowledge_update appends timestamped entry to plant_knowledge.md."""
+        data_dir = str(tmp_path)
+        _append_knowledge_update("Basil prefers morning watering", data_dir)
+
+        knowledge_path = tmp_path / "plant_knowledge.md"
+        assert knowledge_path.exists()
+        content = knowledge_path.read_text()
+        assert "Basil prefers morning watering" in content
+        assert "AI Update" in content
+
+    def test_appends_multiple(self, tmp_path):
+        """Multiple calls append multiple entries."""
+        data_dir = str(tmp_path)
+        _append_knowledge_update("First insight", data_dir)
+        _append_knowledge_update("Second insight", data_dir)
+
+        content = (tmp_path / "plant_knowledge.md").read_text()
+        assert "First insight" in content
+        assert "Second insight" in content
+
+
+# ---------------------------------------------------------------------------
+# format_summary_text: message and observations
+# ---------------------------------------------------------------------------
+
+
+class TestFormatSummaryTextNewFields:
+    def test_message_appears_before_sensors(self):
+        summary = {
+            "timestamp": "2026-02-18T10:30:00+00:00",
+            "sensor_data": {
+                "temperature_c": 24.5,
+                "humidity_pct": 62.0,
+                "co2_ppm": 450,
+                "light_level": 780,
+                "soil_moisture_pct": 45.0,
+            },
+            "decision": {
+                "actions": [{"action": "do_nothing", "reason": "All OK", "params": {}}],
+                "urgency": "normal",
+                "notes": "",
+                "message": "Everything looks great today!",
+            },
+            "actions_taken": [{"action": "do_nothing", "executed": True}],
+            "executed": True,
+            "photo_path": None,
+            "error": None,
+            "mode": "live",
+            "observations": [],
+        }
+        text = format_summary_text(summary)
+        msg_pos = text.index("Everything looks great today!")
+        sensor_pos = text.index("Sensors")
+        assert msg_pos < sensor_pos
+
+    def test_no_message_field_graceful(self):
+        """No crash when message field is missing from decision."""
+        summary = {
+            "timestamp": "2026-02-18T10:30:00+00:00",
+            "sensor_data": None,
+            "decision": {
+                "actions": [{"action": "do_nothing", "reason": "OK", "params": {}}],
+                "urgency": "normal",
+                "notes": "",
+            },
+            "actions_taken": [],
+            "executed": False,
+            "photo_path": None,
+            "error": None,
+            "mode": "dry-run",
+            "observations": [],
+        }
+        text = format_summary_text(summary)
+        assert "Plant Check" in text
+
+    def test_no_observations_no_ai_notes(self):
+        """AI Notes section omitted when no observations."""
+        summary = {
+            "timestamp": "2026-02-18T10:30:00+00:00",
+            "sensor_data": None,
+            "decision": {
+                "actions": [],
+                "urgency": "normal",
+                "notes": "",
+                "message": "",
+            },
+            "actions_taken": [],
+            "executed": False,
+            "photo_path": None,
+            "error": None,
+            "mode": "dry-run",
+            "observations": [],
+        }
+        text = format_summary_text(summary)
+        assert "AI Notes" not in text

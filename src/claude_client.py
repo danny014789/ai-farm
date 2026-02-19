@@ -22,7 +22,13 @@ from typing import Any
 
 import anthropic
 
-from src.prompts import build_research_prompt, build_system_prompt, build_user_prompt
+from src.prompts import (
+    build_chat_system_prompt,
+    build_chat_user_prompt,
+    build_research_prompt,
+    build_system_prompt,
+    build_user_prompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +36,8 @@ logger = logging.getLogger(__name__)
 # Defaults
 # ---------------------------------------------------------------------------
 DEFAULT_MODEL = "claude-sonnet-4-6"
-MAX_DECISION_TOKENS = 1024
+MAX_DECISION_TOKENS = 1536
+MAX_CHAT_TOKENS = 1536
 MAX_RESEARCH_TOKENS = 4096
 MAX_RETRIES = 3
 RETRY_BASE_DELAY_SEC = 2.0  # exponential backoff: 2s, 4s, 8s
@@ -219,6 +226,7 @@ def get_plant_decision(
     history: list[dict[str, Any]],
     photo_path: str | None = None,
     actuator_state: dict[str, str] | None = None,
+    plant_log: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Call Claude to get a plant care decision based on current conditions.
 
@@ -230,10 +238,11 @@ def get_plant_decision(
         history: Recent decision history (list of dicts, most recent first).
         photo_path: Optional filesystem path to a current plant photo.
         actuator_state: Optional dict of current actuator states.
+        plant_log: Optional list of recent plant observation dicts.
 
     Returns:
         Parsed decision dict with keys: assessment, actions (list),
-        urgency, notify_human, notes.
+        urgency, notify_human, notes, message, observations, knowledge_update.
 
     Raises:
         ValueError: If the response cannot be parsed as valid JSON.
@@ -253,6 +262,7 @@ def get_plant_decision(
         current_time=current_time,
         photo_path=photo_path,
         actuator_state=actuator_state,
+        plant_log=plant_log,
     )
 
     logger.info(
@@ -326,8 +336,107 @@ def get_plant_decision(
         act.setdefault("reason", "")
 
     decision.setdefault("notes", "")
+    decision.setdefault("message", "")
+    decision.setdefault("observations", [])
+    decision.setdefault("knowledge_update", None)
 
     return decision
+
+
+def get_chat_response(
+    user_message: str,
+    sensor_data: dict[str, Any],
+    plant_profile: dict[str, Any],
+    plant_knowledge: str,
+    history: list[dict[str, Any]],
+    actuator_state: dict[str, str] | None = None,
+    plant_log: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Call Claude to respond to a user's natural language message.
+
+    Unlike ``get_plant_decision``, this returns a conversational response
+    with an optional actions array for when the user requests something.
+
+    Args:
+        user_message: The user's text message from Telegram.
+        sensor_data: Current sensor readings dict.
+        plant_profile: Parsed plant_profile.yaml dict.
+        plant_knowledge: Cached plant knowledge markdown string.
+        history: Recent decision history.
+        actuator_state: Current actuator states.
+        plant_log: Recent plant log entries.
+
+    Returns:
+        Dict with keys: message (str), actions (list), observations (list).
+
+    Raises:
+        ValueError: If response cannot be parsed.
+        anthropic.AuthenticationError: If the API key is invalid.
+        anthropic.RateLimitError: If rate limits are exceeded after retries.
+        anthropic.APIConnectionError: If the API is unreachable after retries.
+    """
+    client = _get_client()
+    model = _get_model()
+
+    current_time = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    system_prompt = build_chat_system_prompt(plant_profile, plant_knowledge)
+    user_content = build_chat_user_prompt(
+        user_message=user_message,
+        sensor_data=sensor_data,
+        history=history,
+        current_time=current_time,
+        actuator_state=actuator_state,
+        plant_log=plant_log,
+    )
+
+    logger.info("Requesting chat response from %s", model)
+
+    def _api_call() -> anthropic.types.Message:
+        return client.messages.create(
+            model=model,
+            max_tokens=MAX_CHAT_TOKENS,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+        )
+
+    response = _call_with_retry(_api_call)
+
+    # Track token usage
+    input_tokens = response.usage.input_tokens
+    output_tokens = response.usage.output_tokens
+    usage_tracker.record(input_tokens, output_tokens)
+
+    logger.info(
+        "Chat response: %d input, %d output tokens (cost: $%.4f)",
+        input_tokens,
+        output_tokens,
+        usage_tracker.estimated_cost_usd,
+    )
+
+    # Extract text from response
+    raw_text = ""
+    for block in response.content:
+        if block.type == "text":
+            raw_text += block.text
+
+    if not raw_text.strip():
+        raise ValueError("Claude returned an empty chat response.")
+
+    result = _extract_json(raw_text)
+
+    # Ensure required keys
+    result.setdefault("message", "I'm not sure how to respond to that.")
+    result.setdefault("actions", [])
+    result.setdefault("observations", [])
+
+    # Fill defaults per action
+    for act in result.get("actions", []):
+        act.setdefault("action", "do_nothing")
+        act.setdefault("params", {})
+        act.setdefault("reason", "")
+
+    return result
 
 
 def research_plant(

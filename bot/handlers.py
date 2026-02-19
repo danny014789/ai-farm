@@ -27,8 +27,13 @@ from bot.keyboards import (
     plant_stage_keyboard,
 )
 from src.action_executor import ActionExecutor
+from src.actuator_state import load_actuator_state, update_after_action
+from src.claude_client import get_chat_response
 from src.config_loader import load_plant_profile, save_plant_profile
-from src.sensor_reader import SensorData, SensorReadError, read_sensors
+from src.logger import load_recent_decisions, load_recent_plant_log, log_plant_observations
+from src.plant_knowledge import ensure_plant_knowledge
+from src.safety import validate_action
+from src.sensor_reader import SensorData, SensorReadError, read_sensors, read_sensors_mock
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +90,58 @@ def _pause_file(context: ContextTypes.DEFAULT_TYPE) -> Path:
 
 def _decisions_path(context: ContextTypes.DEFAULT_TYPE) -> Path:
     return _data_dir(context) / "decisions.jsonl"
+
+
+TELEGRAM_MAX_LENGTH = 4096
+
+
+def _split_text(text: str, max_length: int = TELEGRAM_MAX_LENGTH) -> list[str]:
+    """Split text into chunks that fit within *max_length*.
+
+    Tries to split at newline boundaries. If a single line exceeds
+    *max_length*, falls back to a hard character split.
+    """
+    if len(text) <= max_length:
+        return [text]
+
+    chunks: list[str] = []
+    current = ""
+
+    for line in text.split("\n"):
+        candidate = (current + "\n" + line) if current else line
+        if len(candidate) <= max_length:
+            current = candidate
+        else:
+            # Flush current chunk if it has content
+            if current:
+                chunks.append(current)
+                current = ""
+            # If the single line itself exceeds max_length, hard-split it
+            if len(line) > max_length:
+                while line:
+                    chunks.append(line[:max_length])
+                    line = line[max_length:]
+            else:
+                current = line
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
+async def _send_long_message(message, text: str, **kwargs) -> None:
+    """Send *text* via Telegram, splitting into chunks if it exceeds 4096 chars.
+
+    Any extra *kwargs* (e.g. ``reply_markup``) are passed only to the
+    **last** chunk so that inline keyboards appear at the end.
+    """
+    chunks = _split_text(text)
+    for i, chunk in enumerate(chunks):
+        if i == len(chunks) - 1:
+            await message.reply_text(chunk, **kwargs)
+        else:
+            await message.reply_text(chunk)
 
 
 def _format_sensor_data(data: SensorData) -> str:
@@ -169,7 +226,7 @@ async def help_command(
         "  /pause           - Pause scheduled monitoring\n"
         "  /resume          - Resume scheduled monitoring\n"
     )
-    await update.message.reply_text(text)
+    await _send_long_message(update.message, text)
 
 
 @authorized_only
@@ -417,7 +474,7 @@ async def profile_command(
                 content = content[:500] + "..."
             lines.append(f"\nResearch notes:\n{content}")
 
-        await update.message.reply_text("\n".join(lines))
+        await _send_long_message(update.message, "\n".join(lines))
 
     except Exception as exc:
         logger.exception("Error loading profile")
@@ -457,7 +514,7 @@ async def history_command(
             line += f"\n   {reason}"
         lines.append(line)
 
-    await update.message.reply_text("\n".join(lines))
+    await _send_long_message(update.message, "\n".join(lines))
 
 
 @authorized_only
@@ -746,6 +803,102 @@ async def _research_plant(
             f"The plant name and stage have been saved. "
             f"You can manually edit config/plant_profile.yaml."
         )
+
+
+@authorized_only
+async def chat_message_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle free-text messages — natural language chat with the AI."""
+    user_message = update.message.text
+    if not user_message:
+        return
+
+    await update.message.chat.send_action("typing")
+
+    # Read sensors (fallback to mock on error)
+    try:
+        sensor_data = read_sensors(_farmctl_path(context))
+    except (SensorReadError, Exception) as exc:
+        logger.warning("Sensor read failed in chat, using mock: %s", exc)
+        sensor_data = read_sensors_mock()
+
+    # Load context
+    data_dir = str(_data_dir(context))
+    profile = load_plant_profile()
+    history = load_recent_decisions(10, data_dir)
+    plant_log = load_recent_plant_log(20, data_dir)
+    actuator_state = load_actuator_state(data_dir)
+    plant_knowledge = ensure_plant_knowledge(
+        profile, _bot_data(context, "anthropic_api_key") or ""
+    )
+
+    # Get AI response
+    try:
+        response = get_chat_response(
+            user_message=user_message,
+            sensor_data=sensor_data.to_dict(),
+            plant_profile=profile,
+            plant_knowledge=plant_knowledge,
+            history=history,
+            actuator_state=actuator_state,
+            plant_log=plant_log,
+        )
+    except Exception as exc:
+        logger.exception("Chat AI call failed")
+        await update.message.reply_text(f"Sorry, I had trouble thinking: {exc}")
+        return
+
+    # Execute any actions the AI wants to take
+    actions = response.get("actions", [])
+    action_results: list[str] = []
+    executor = ActionExecutor(
+        _farmctl_path(context), dry_run=_is_dry_run(context)
+    )
+
+    for action_spec in actions:
+        action_name = action_spec.get("action", "")
+        params = action_spec.get("params", {})
+        reason = action_spec.get("reason", "")
+
+        if not validate_action({"action": action_name, "params": params}):
+            action_results.append(f"Rejected: {action_name} (failed safety check)")
+            continue
+
+        try:
+            result = executor.execute({"action": action_name, "params": params})
+            if result.success:
+                mode_tag = " [dry-run]" if result.dry_run else ""
+                action_results.append(f"Executed{mode_tag}: {action_name}")
+                update_after_action(action_name, params, data_dir)
+            else:
+                action_results.append(f"Failed: {action_name} - {result.error}")
+
+            _log_decision(
+                _decisions_path(context),
+                action=action_name,
+                reason=reason or "Chat request",
+                dry_run=result.dry_run,
+                success=result.success,
+            )
+        except Exception as exc:
+            logger.exception("Action execution failed in chat: %s", action_name)
+            action_results.append(f"Error: {action_name} - {exc}")
+
+    # Log observations
+    observations = response.get("observations", [])
+    if observations:
+        log_plant_observations(observations, data_dir, source="chat")
+
+    # Build reply
+    reply = response.get("message", "")
+    if action_results:
+        reply += "\n\n" + "\n".join(action_results)
+
+    if reply.strip():
+        await _send_long_message(update.message, reply)
+    else:
+        await update.message.reply_text("I'm not sure what to say about that.")
 
 
 def _log_decision(

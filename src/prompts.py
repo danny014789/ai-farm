@@ -43,7 +43,10 @@ _RESPONSE_SCHEMA = """\
   ],
   "urgency": "normal|attention|critical",
   "notify_human": <true|false>,
-  "notes": "Any additional observations, concerns, or recommendations"
+  "notes": "Any additional observations, concerns, or recommendations",
+  "message": "A natural, conversational summary for the human caretaker. 2-4 sentences.",
+  "observations": ["noteworthy observations to remember for future checks"],
+  "knowledge_update": "significant learning to append to knowledge doc, or null"
 }"""
 
 
@@ -129,6 +132,17 @@ You may recommend one or more actions per evaluation. Choose from:
 5. If a photo is provided, examine it for signs of stress, pests, disease, wilting, discoloration, or other visual issues.
 6. Prioritize: critical safety > plant health > optimal growth > energy efficiency.
 
+## Operational Memory
+You have a plant log where past observations are recorded. Use it to track patterns \
+(watering effectiveness, drying rates), note growth milestones, record calibration \
+insights. Write observations in the "observations" array. Use "knowledge_update" for \
+significant discoveries worth adding to the knowledge document.
+
+## Human Communication
+The "message" field is sent to the plant owner via Telegram. Write a brief, friendly \
+status update with context: comparison with recent readings, effect of recent actions, \
+growth progress. Keep under 500 characters.
+
 ## Response Format
 Respond with ONLY a valid JSON object. No markdown fences, no extra text, no explanation outside the JSON.
 
@@ -146,6 +160,7 @@ def build_user_prompt(
     current_time: str,
     photo_path: str | None = None,
     actuator_state: dict[str, str] | None = None,
+    plant_log: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Build the user message content blocks for a decision request.
 
@@ -162,6 +177,7 @@ def build_user_prompt(
         photo_path: Optional path to a plant photo (JPEG/PNG).
         actuator_state: Optional dict of current actuator states
             (e.g. {"light": "on", "heater": "off", ...}).
+        plant_log: Optional list of recent plant observation dicts.
 
     Returns:
         List of content block dicts for the messages API.
@@ -177,10 +193,17 @@ def build_user_prompt(
     if actuator_text:
         actuator_section = f"## Current Actuator States\n{actuator_text}\n\n"
 
+    plant_log_section = ""
+    if plant_log:
+        plant_log_section = (
+            f"## Your Previous Observations\n{_format_plant_log(plant_log)}\n\n"
+        )
+
     text_block = (
         f"## Current Time\n{current_time}\n\n"
         f"## Current Sensor Readings\n{sensor_text}\n\n"
         f"{actuator_section}"
+        f"{plant_log_section}"
         f"## Recent Decision History (last {len(history)} decisions)\n{history_text}\n\n"
         "Analyze the current plant status and return your JSON decision."
     )
@@ -289,6 +312,164 @@ real-time automated care decisions, so numeric ranges are important."""
 
 
 # ---------------------------------------------------------------------------
+# Chat-mode prompts (natural language Telegram conversation)
+# ---------------------------------------------------------------------------
+
+_CHAT_RESPONSE_SCHEMA = """\
+{
+  "message": "Your natural language response to the user.",
+  "actions": [
+    {
+      "action": "water|light_on|light_off|heater_on|heater_off|circulation|do_nothing",
+      "params": {"duration_sec": <int, required for water and circulation, omit for others>},
+      "reason": "Why this action is being taken"
+    }
+  ],
+  "observations": ["Optional: noteworthy observations worth logging for future reference"]
+}"""
+
+
+def build_chat_system_prompt(
+    plant_profile: dict[str, Any], plant_knowledge: str
+) -> str:
+    """Build the system prompt for conversational chat mode.
+
+    Similar to the scheduled check prompt but instructs Claude to respond
+    conversationally rather than with a pure JSON assessment.
+
+    Args:
+        plant_profile: Parsed plant_profile.yaml dict.
+        plant_knowledge: Cached plant knowledge markdown string.
+
+    Returns:
+        System prompt string for chat mode.
+    """
+    plant = plant_profile.get("plant", {})
+    ideal = plant_profile.get("ideal_conditions", {})
+
+    plant_name = plant.get("name") or "unknown plant"
+    variety = plant.get("variety") or ""
+    growth_stage = plant.get("growth_stage") or "unknown"
+    planted_date = plant.get("planted_date") or "unknown"
+    notes = plant.get("notes") or ""
+
+    variety_label = f" ({variety})" if variety else ""
+    ideal_block = _format_ideal_conditions(ideal)
+
+    knowledge_section = ""
+    if plant_knowledge and plant_knowledge.strip():
+        knowledge_section = (
+            "\n\n## Researched Plant Knowledge\n"
+            f"{plant_knowledge.strip()}\n"
+        )
+
+    return f"""\
+You are a friendly, knowledgeable plant care AI assistant. You are responsible for \
+a single plant in a controlled indoor environment on a Raspberry Pi automation system.
+
+You are having a conversation with the plant's owner via Telegram. Respond naturally \
+and helpfully.
+
+## Your Plant
+- Species: {plant_name}{variety_label}
+- Growth stage: {growth_stage}
+- Planted: {planted_date}
+{"- Notes: " + notes if notes else ""}
+
+## Ideal Growing Conditions
+{ideal_block}
+{knowledge_section}
+## Available Actions
+You can take actions on behalf of the user. If the user asks you to water, adjust \
+light, etc., include the appropriate action in your response.
+
+| Action        | Parameters               |
+|---------------|--------------------------|
+| water         | duration_sec (1-30)      |
+| light_on      | none                     |
+| light_off     | none                     |
+| heater_on     | none                     |
+| heater_off    | none                     |
+| circulation   | duration_sec (10-300)    |
+| do_nothing    | none                     |
+
+## Action Constraints
+- Water: duration_sec 1-30. Minimum 60 minutes between waterings.
+- Circulation: duration_sec 10-300.
+- Heater: Never turn on above {ideal.get("temp_max_c", 28)}C.
+- Light: Respect light schedule. No lights midnight-5am.
+- When in doubt, ask the user rather than acting.
+
+## Guidelines
+1. Be conversational and natural. You are chatting with the plant owner, not generating a report.
+2. Reference the current sensor data, recent history, and your plant log observations when relevant.
+3. If the user asks you to do something (water, lights, etc.), include the action in the "actions" array.
+4. If the user is just asking a question, respond with just a "message" and empty actions.
+5. Be CONSERVATIVE with actions. "water it a bit" means short duration (5s). "give it a good watering" means longer (15-20s).
+6. You can log observations about the conversation in the "observations" array.
+
+## Response Format
+Respond with ONLY a valid JSON object:
+
+{_CHAT_RESPONSE_SCHEMA}
+
+Do NOT include any text before or after the JSON object."""
+
+
+def build_chat_user_prompt(
+    user_message: str,
+    sensor_data: dict[str, Any],
+    history: list[dict[str, Any]],
+    current_time: str,
+    actuator_state: dict[str, str] | None = None,
+    plant_log: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Build the user message for a chat interaction.
+
+    Args:
+        user_message: The user's free-text message from Telegram.
+        sensor_data: Current sensor readings dict.
+        history: Recent decision history.
+        current_time: Current timestamp string.
+        actuator_state: Current actuator states.
+        plant_log: Recent plant log entries.
+
+    Returns:
+        List of content block dicts for the messages API.
+    """
+    sensor_text = _format_sensor_data(sensor_data)
+    history_text = _format_history(history)
+
+    context_parts = [
+        f"## Current Time\n{current_time}",
+        f"## Current Sensor Readings\n{sensor_text}",
+    ]
+
+    if actuator_state:
+        actuator_text = _format_actuator_state(actuator_state)
+        context_parts.append(f"## Current Actuator States\n{actuator_text}")
+
+    if plant_log:
+        plant_log_text = _format_plant_log(plant_log)
+        context_parts.append(f"## Your Previous Observations\n{plant_log_text}")
+
+    context_parts.append(
+        f"## Recent Decision History (last {len(history)} decisions)\n{history_text}"
+    )
+
+    context = "\n\n".join(context_parts)
+
+    text_block = (
+        f"{context}\n\n"
+        f"---\n\n"
+        f"## User Message\n{user_message}\n\n"
+        f"Respond to the user's message with a JSON object."
+    )
+
+    return [{"type": "text", "text": text_block}]
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
@@ -326,6 +507,26 @@ def _format_actuator_state(state: dict[str, str]) -> str:
         "circulation": "Circulation fan",
     }
     lines = [f"- {labels.get(k, k)}: {v}" for k, v in state.items()]
+    return "\n".join(lines)
+
+
+def _format_plant_log(log: list[dict[str, Any]]) -> str:
+    """Format plant log entries into a readable block.
+
+    Args:
+        log: List of plant log dicts with timestamp and observation keys.
+
+    Returns:
+        Formatted plant log string, or a note if empty.
+    """
+    if not log:
+        return "No previous observations recorded yet."
+
+    lines: list[str] = []
+    for entry in log:
+        ts = entry.get("timestamp", "?")[:19]
+        obs = entry.get("observation", "")
+        lines.append(f"- [{ts}] {obs}")
     return "\n".join(lines)
 
 
