@@ -16,6 +16,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -23,6 +24,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from telegram import Update
+from telegram.error import BadRequest, Conflict
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -122,6 +124,15 @@ async def scheduled_check(context: ContextTypes.DEFAULT_TYPE) -> None:
                 except Exception:
                     logger.warning("Failed to send scheduled photo")
 
+    except BadRequest as exc:
+        if "chat not found" in str(exc).lower():
+            logger.error(
+                "Chat ID %s not found - check TELEGRAM_CHAT_ID in .env. "
+                "Make sure you have sent /start to the bot first.",
+                chat_id,
+            )
+        else:
+            logger.error("Telegram error in scheduled check: %s", exc)
     except Exception as exc:
         logger.exception("Scheduled check failed")
         if chat_id:
@@ -130,8 +141,73 @@ async def scheduled_check(context: ContextTypes.DEFAULT_TYPE) -> None:
                     chat_id=chat_id,
                     text=f"Scheduled check ERROR:\n{exc}",
                 )
+            except BadRequest:
+                logger.error(
+                    "Cannot send error notification - chat %s not found", chat_id
+                )
             except Exception:
                 logger.exception("Failed to send error notification")
+
+
+# ---------------------------------------------------------------------------
+# Error handler
+# ---------------------------------------------------------------------------
+
+
+async def _error_handler(
+    update: object, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Global error handler for the bot application.
+
+    Handles known errors cleanly instead of dumping full tracebacks:
+    - Conflict (409): another bot instance is polling → shut down gracefully
+    - BadRequest (400): e.g. invalid chat ID → log a clear message
+    """
+    err = context.error
+
+    if isinstance(err, Conflict):
+        logger.error(
+            "Another bot instance is already running with this token. "
+            "Kill the other process first, then restart."
+        )
+        # Stop this instance to avoid endless 409 retry loops
+        asyncio.get_event_loop().call_soon(
+            lambda: asyncio.ensure_future(context.application.updater.stop())
+        )
+        return
+
+    if isinstance(err, BadRequest) and "chat not found" in str(err).lower():
+        logger.error(
+            "Chat not found - check TELEGRAM_CHAT_ID in .env. "
+            "Make sure you have sent /start to the bot first."
+        )
+        return
+
+    logger.error("Unhandled bot error: %s", err)
+
+
+# ---------------------------------------------------------------------------
+# Startup validation
+# ---------------------------------------------------------------------------
+
+
+async def _post_init(application: Application) -> None:
+    """Validate configuration after the bot connects to Telegram."""
+    chat_id = application.bot_data.get("authorized_chat_id")
+    if not chat_id:
+        return
+    try:
+        await application.bot.get_chat(chat_id)
+        logger.info("Chat ID %s verified OK", chat_id)
+    except BadRequest:
+        logger.warning(
+            "TELEGRAM_CHAT_ID=%s is not reachable. Scheduled messages "
+            "will fail. Send /start to the bot from the correct account, "
+            "or fix the chat ID in .env.",
+            chat_id,
+        )
+    except Exception as exc:
+        logger.warning("Could not verify chat ID %s: %s", chat_id, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +250,12 @@ def main() -> None:
     Path(data_dir).mkdir(parents=True, exist_ok=True)
 
     # --- Build application -------------------------------------------------
-    application = Application.builder().token(bot_token).build()
+    application = (
+        Application.builder()
+        .token(bot_token)
+        .post_init(_post_init)
+        .build()
+    )
 
     # Store config in bot_data for handlers to access
     application.bot_data["authorized_chat_id"] = chat_id
@@ -202,6 +283,9 @@ def main() -> None:
     # Callback query handler for inline keyboard buttons
     application.add_handler(CallbackQueryHandler(confirm_callback))
 
+    # Global error handler (catches Conflict, BadRequest, etc. cleanly)
+    application.add_error_handler(_error_handler)
+
     # --- Schedule hourly monitoring check ----------------------------------
     job_queue = application.job_queue
     if job_queue is not None:
@@ -223,7 +307,10 @@ def main() -> None:
         agent_mode,
         chat_id or "ANY",
     )
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+    )
 
 
 if __name__ == "__main__":
