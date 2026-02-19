@@ -1,0 +1,16 @@
+[Unit]
+Description=Plant-Ops AI Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__HOME__/plant-ops-ai
+ExecStart=__HOME__/plant-ops-ai/venv/bin/python3 -m bot.telegram_bot
+EnvironmentFile=__HOME__/plant-ops-ai/.env
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
