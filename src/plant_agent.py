@@ -389,7 +389,9 @@ def main():
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    farmctl_path = os.getenv("FARMCTL_PATH", "/home/pi/plant-ops/farmctl.py")
+    project_root = str(Path(__file__).resolve().parent.parent)
+    farmctl_default = os.path.join(project_root, "farmctl", "farmctl.py")
+    farmctl_path = os.getenv("FARMCTL_PATH", farmctl_default)
     data_dir = os.getenv("DATA_DIR", str(Path(__file__).resolve().parent.parent / "data"))
 
     if args.once:

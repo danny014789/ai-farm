@@ -10,7 +10,7 @@ Before starting, make sure you have:
 - Python 3.11 or newer (`python3 --version` to check)
 - `pip` installed (`python3 -m pip --version`)
 - `git` installed (`git --version`)
-- `farmctl.py` already working at `~/farmctl/farmctl.py` -- you should be able to run `python3 ~/farmctl/farmctl.py status` and see sensor output
+- `farmctl.py` is included in the repo at `farmctl/farmctl.py` -- after cloning you should be able to run `python3 farmctl/farmctl.py status` and see sensor output
 - Arduino connected via USB (typically `/dev/ttyACM0`)
 - Pi camera module connected and enabled
 
@@ -52,9 +52,9 @@ Fill in each variable:
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) -- create an API key | `sk-ant-api03-...` |
 | `TELEGRAM_BOT_TOKEN` | Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, follow prompts | `123456789:AAF...` |
 | `TELEGRAM_CHAT_ID` | Message [@userinfobot](https://t.me/userinfobot) on Telegram, it replies with your chat ID | `987654321` |
-| `FARMCTL_PATH` | Absolute path to your farmctl.py | `/home/pi/farmctl/farmctl.py` |
+| `FARMCTL_PATH` | Path to farmctl.py (defaults to in-repo `farmctl/farmctl.py`) | Leave unset or `/home/pi/plant-ops-ai/farmctl/farmctl.py` |
 | `SERIAL_PORT` | Arduino serial port (check with `ls /dev/ttyACM*`) | `/dev/ttyACM0` |
-| `CLAUDE_MODEL` | Which Claude model to use (Sonnet recommended) | `claude-sonnet-4-20250514` |
+| `CLAUDE_MODEL` | Which Claude model to use (Sonnet recommended) | `claude-sonnet-4-6` |
 | `DATA_DIR` | Where to store logs and cached data | `/home/pi/plant-ops-ai/data` |
 | `AGENT_MODE` | Start with `dry-run`, switch to `live` when ready | `dry-run` |
 
@@ -98,8 +98,8 @@ python3 -m src.plant_agent --once --dry-run
 
 You should see real sensor values (temperature, humidity, CO2, light, soil moisture). If sensor reading fails, check:
 - Is the Arduino connected? (`ls /dev/ttyACM*`)
-- Does `farmctl.py status` work on its own? (`python3 ~/farmctl/farmctl.py status`)
-- Is `FARMCTL_PATH` correct in `.env`?
+- Does `farmctl.py status` work on its own? (`python3 farmctl/farmctl.py status` from the project root)
+- Is `FARMCTL_PATH` correct in `.env` (or leave it unset to use the in-repo default)?
 
 ## 8. Start the Telegram Bot
 
@@ -120,38 +120,11 @@ When you are satisfied everything works, switch to live mode:
 
 ## 9. Run as a systemd Service
 
-To keep the bot running after you close SSH and auto-restart on boot:
+To keep the bot running after you close SSH and auto-restart on boot, use the included install script. It automatically detects your username and paths:
 
 ```bash
-sudo nano /etc/systemd/system/plant-ops-ai.service
-```
-
-Paste this content:
-
-```ini
-[Unit]
-Description=Plant-Ops AI Telegram Bot
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=pi
-WorkingDirectory=/home/pi/plant-ops-ai
-ExecStart=/home/pi/plant-ops-ai/venv/bin/python3 -m bot.telegram_bot
-Restart=always
-RestartSec=30
-EnvironmentFile=/home/pi/plant-ops-ai/.env
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Save and exit, then enable and start the service:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable plant-ops-ai
+cd ~/plant-ops-ai
+bash deploy/install.sh
 sudo systemctl start plant-ops-ai
 ```
 
@@ -173,8 +146,6 @@ sudo systemctl restart plant-ops-ai
 # Stop the service
 sudo systemctl stop plant-ops-ai
 ```
-
-**Note**: If your Pi user is not `pi`, change the `User=` and all `/home/pi/` paths in the service file accordingly.
 
 ## 10. Monitoring
 
@@ -267,7 +238,7 @@ Sensor read failed: ...
 ```
 
 - Check Arduino USB connection: `ls /dev/ttyACM*`
-- Test farmctl.py directly: `python3 ~/farmctl/farmctl.py status`
+- Test farmctl.py directly: `python3 farmctl/farmctl.py status`
 - Verify `FARMCTL_PATH` in `.env` matches the actual location
 - Check serial port permissions: your user may need to be in the `dialout` group:
   ```bash

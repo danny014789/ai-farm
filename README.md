@@ -57,6 +57,8 @@ plant-ops-ai/
 ├── config/
 │   ├── safety_limits.yaml      # Hardcoded safety limits
 │   └── plant_profile.yaml      # Current plant configuration
+├── farmctl/
+│   └── farmctl.py              # Hardware CLI (serial + camera control)
 ├── deploy/
 │   ├── plant-ops-ai.service    # systemd service template
 │   └── install.sh              # Service install script
@@ -71,7 +73,7 @@ plant-ops-ai/
 ## Prerequisites
 
 - Python 3.11+
-- A Raspberry Pi with `farmctl.py` working (Arduino connected, sensors reading, relays toggling)
+- A Raspberry Pi with an Arduino sensor/relay board connected via USB
 - Anthropic API key ([console.anthropic.com](https://console.anthropic.com))
 - Telegram bot token (create one via [@BotFather](https://t.me/BotFather))
 - Your Telegram chat ID (message [@userinfobot](https://t.me/userinfobot) to find it)
@@ -220,7 +222,7 @@ rm /tmp/plant-agent-stop       # Resume
 | `ANTHROPIC_API_KEY` | Yes | -- | Claude API key |
 | `TELEGRAM_BOT_TOKEN` | Yes | -- | Telegram bot token from @BotFather |
 | `TELEGRAM_CHAT_ID` | Yes | -- | Comma-separated Telegram chat IDs |
-| `FARMCTL_PATH` | No | `~/farmctl/farmctl.py` | Path to farmctl.py on the Pi |
+| `FARMCTL_PATH` | No | `./farmctl/farmctl.py` | Path to farmctl.py (in-repo default) |
 | `SERIAL_PORT` | No | `/dev/ttyACM0` | Arduino serial port |
 | `CLAUDE_MODEL` | No | `claude-sonnet-4-6` | Claude model to use |
 | `DATA_DIR` | No | `./data` | Directory for logs and cached data |

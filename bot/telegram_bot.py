@@ -244,7 +244,9 @@ def main() -> None:
 
     chat_id_str = os.getenv("TELEGRAM_CHAT_ID", "")
     chat_ids = [cid.strip() for cid in chat_id_str.split(",") if cid.strip()]
-    farmctl_path = os.getenv("FARMCTL_PATH", os.path.expanduser("~/farmctl/farmctl.py"))
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    farmctl_default = os.path.join(project_root, "farmctl", "farmctl.py")
+    farmctl_path = os.getenv("FARMCTL_PATH", farmctl_default)
     data_dir = os.getenv("DATA_DIR", "data")
     agent_mode = os.getenv("AGENT_MODE", "dry-run")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
