@@ -1,5 +1,7 @@
 """Tests for src/action_executor.py -- action execution via farmctl.py."""
 
+import json
+import os
 import subprocess
 from unittest.mock import patch, MagicMock
 
@@ -334,3 +336,145 @@ class TestExecutionResult:
         assert d["success"] is True
         assert d["action"] == "water"
         assert d["dry_run"] is True
+
+
+# ---------------------------------------------------------------------------
+# take_photo_with_light — smart light & archival
+# ---------------------------------------------------------------------------
+
+
+class TestTakePhotoWithLight:
+    """Tests for the consolidated take_photo_with_light method."""
+
+    def _write_actuator_state(self, data_dir: str, light: str = "off"):
+        """Write a minimal actuator_state.json for testing."""
+        os.makedirs(data_dir, exist_ok=True)
+        state = {"light": light, "heater": "off", "pump": "idle",
+                 "circulation": "idle", "water_tank": "ok", "heater_lockout": "normal"}
+        with open(os.path.join(data_dir, "actuator_state.json"), "w") as f:
+            json.dump(state, f)
+
+    def test_skips_light_toggle_when_already_on(self, tmp_path):
+        """When light is already on, should not call light on/off."""
+        data_dir = str(tmp_path / "data")
+        self._write_actuator_state(data_dir, light="on")
+        output_path = str(tmp_path / "photo.jpg")
+
+        executor = _make_executor(dry_run=False)
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="ok", stderr=""
+        )
+
+        calls = []
+        original_run = subprocess.run
+
+        def tracking_run(cmd, **kwargs):
+            calls.append(cmd)
+            return mock_result
+
+        with patch("src.action_executor.subprocess.run", side_effect=tracking_run):
+            result = executor.take_photo_with_light(
+                output_path=output_path,
+                data_dir=data_dir,
+            )
+
+        assert result == output_path
+        # Should only have 1 call: camera-snap (no light on, no light off)
+        assert len(calls) == 1
+        assert "camera-snap" in calls[0]
+
+    def test_toggles_light_when_off(self, tmp_path):
+        """When light is off, should call light on, camera, light off."""
+        data_dir = str(tmp_path / "data")
+        self._write_actuator_state(data_dir, light="off")
+        output_path = str(tmp_path / "photo.jpg")
+
+        executor = _make_executor(dry_run=False)
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="ok", stderr=""
+        )
+
+        calls = []
+
+        def tracking_run(cmd, **kwargs):
+            calls.append(cmd)
+            return mock_result
+
+        with patch("src.action_executor.subprocess.run", side_effect=tracking_run):
+            with patch("time.sleep"):
+                result = executor.take_photo_with_light(
+                    output_path=output_path,
+                    data_dir=data_dir,
+                )
+
+        assert result == output_path
+        # 3 calls: light on, camera-snap, light off
+        assert len(calls) == 3
+        assert "light" in calls[0] and "on" in calls[0]
+        assert "camera-snap" in calls[1]
+        assert "light" in calls[2] and "off" in calls[2]
+
+    def test_archives_photo_with_timestamp(self, tmp_path):
+        """When photos_dir is set, should copy photo to timestamped archive."""
+        data_dir = str(tmp_path / "data")
+        self._write_actuator_state(data_dir, light="on")
+        photos_dir = str(tmp_path / "data" / "photos")
+        output_path = str(tmp_path / "photo.jpg")
+
+        # Create a fake photo file so shutil.copy2 works
+        with open(output_path, "wb") as f:
+            f.write(b"fake jpeg data")
+
+        executor = _make_executor(dry_run=False)
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="ok", stderr=""
+        )
+
+        with patch("src.action_executor.subprocess.run", return_value=mock_result):
+            result = executor.take_photo_with_light(
+                output_path=output_path,
+                data_dir=data_dir,
+                photos_dir=photos_dir,
+            )
+
+        assert result == output_path
+        # Check archive directory was created and has a file
+        assert os.path.isdir(photos_dir)
+        archived = os.listdir(photos_dir)
+        assert len(archived) == 1
+        assert archived[0].startswith("plant_")
+        assert archived[0].endswith(".jpg")
+
+    def test_no_archive_when_photos_dir_not_set(self, tmp_path):
+        """When photos_dir is None, no archival should happen."""
+        data_dir = str(tmp_path / "data")
+        self._write_actuator_state(data_dir, light="on")
+        output_path = str(tmp_path / "photo.jpg")
+
+        executor = _make_executor(dry_run=False)
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="ok", stderr=""
+        )
+
+        with patch("src.action_executor.subprocess.run", return_value=mock_result):
+            result = executor.take_photo_with_light(
+                output_path=output_path,
+                data_dir=data_dir,
+                photos_dir=None,
+            )
+
+        assert result == output_path
+        # No photos directory should be created
+        assert not os.path.exists(os.path.join(data_dir, "photos"))
+
+    def test_dry_run_skips_light_check(self, tmp_path):
+        """In dry-run mode without data_dir, should still toggle light."""
+        output_path = str(tmp_path / "photo.jpg")
+        executor = _make_executor(dry_run=True)
+
+        result = executor.take_photo_with_light(
+            output_path=output_path,
+            data_dir=None,
+        )
+
+        assert result == output_path

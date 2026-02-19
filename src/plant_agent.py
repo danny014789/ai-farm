@@ -134,6 +134,7 @@ def run_check(
         photo_path = photo_executor.take_photo_with_light(
             output_path=os.path.join(data_dir, "plant_latest.jpg"),
             data_dir=data_dir if not dry_run else None,
+            photos_dir=os.path.join(data_dir, "photos"),
         )
         if photo_path:
             logger.info("Photo captured: %s", photo_path)

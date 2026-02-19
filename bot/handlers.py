@@ -269,8 +269,13 @@ async def photo_command(
         executor = ActionExecutor(
             _farmctl_path(context), dry_run=_is_dry_run(context)
         )
+        data_dir = str(_data_dir(context))
         photo_path = "/tmp/plant_photo.jpg"
-        result = executor.take_photo(photo_path)
+        result = executor.take_photo_with_light(
+            output_path=photo_path,
+            data_dir=data_dir,
+            photos_dir=os.path.join(data_dir, "photos"),
+        )
 
         if result and Path(result).exists():
             await update.message.reply_photo(
