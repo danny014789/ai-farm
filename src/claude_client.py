@@ -430,15 +430,9 @@ def get_chat_response(
 
     # Ensure required keys
     result.setdefault("message", "I'm not sure how to respond to that.")
-    result.setdefault("actions", [])
     result.setdefault("observations", [])
+    result.setdefault("knowledge_update", None)
     result.setdefault("hardware_update", None)
-
-    # Fill defaults per action
-    for act in result.get("actions", []):
-        act.setdefault("action", "do_nothing")
-        act.setdefault("params", {})
-        act.setdefault("reason", "")
 
     return result
 

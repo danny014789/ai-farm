@@ -195,18 +195,86 @@ def run_check(
 
     # --- 6. Validate, execute, and log each action ---
     executor = ActionExecutor(farmctl_path, dry_run=dry_run)
+    decision_context = {
+        "urgency": decision.get("urgency", "normal"),
+        "notify_human": decision.get("notify_human", False),
+        "assessment": decision.get("assessment", ""),
+        "notes": decision.get("notes", ""),
+    }
+    actions_taken = execute_validated_actions(
+        actions=decision.get("actions", []),
+        decision_context=decision_context,
+        sensor_data=sensor_data,
+        history=history,
+        executor=executor,
+        data_dir=data_dir,
+        dry_run=dry_run,
+        source="scheduled",
+    )
+
+    summary["actions_taken"] = actions_taken
+    summary["executed"] = any(a["executed"] for a in actions_taken) if actions_taken else False
+
+    # --- 7. Log observations and handle knowledge updates ---
+    observations = decision.get("observations", [])
+    if observations:
+        log_plant_observations(observations, data_dir, source="scheduled_check")
+    summary["observations"] = observations
+
+    knowledge_update = decision.get("knowledge_update")
+    if knowledge_update:
+        append_knowledge_update(knowledge_update, data_dir)
+    summary["knowledge_update"] = knowledge_update
+
+    hardware_update = decision.get("hardware_update")
+    if hardware_update and isinstance(hardware_update, dict):
+        apply_hardware_update(hardware_update, hardware_profile)
+    summary["hardware_update"] = hardware_update
+
+    return summary
+
+
+def execute_validated_actions(
+    actions: list[dict[str, Any]],
+    decision_context: dict[str, Any],
+    sensor_data: SensorData,
+    history: list[dict[str, Any]],
+    executor: ActionExecutor,
+    data_dir: str,
+    dry_run: bool,
+    source: str = "scheduled",
+) -> list[dict[str, Any]]:
+    """Validate, execute, and log a list of actions.
+
+    This is the canonical action execution pipeline used by both the
+    scheduler and manual Telegram slash commands.
+
+    Args:
+        actions: List of action dicts, each with keys: action, params, reason.
+        decision_context: Top-level decision metadata with keys:
+            urgency, notify_human, assessment, notes.
+        sensor_data: Current SensorData (required for safety validation).
+        history: Recent decision history (required for rate limit checks).
+        executor: Pre-configured ActionExecutor instance.
+        data_dir: Path to data directory for logging.
+        dry_run: Whether this is a dry-run execution.
+        source: Origin label for log records (e.g. "scheduled", "manual_command").
+
+    Returns:
+        List of result dicts, each with keys:
+            action (str), executed (bool), safety_reason (str|None).
+    """
     actions_taken: list[dict] = []
 
-    for act in decision.get("actions", []):
-        # Build a single-action dict for safety validation
+    for act in actions:
         single = {
             "action": act.get("action", "do_nothing"),
             "params": act.get("params", {}),
             "reason": act.get("reason", ""),
-            "urgency": decision.get("urgency", "normal"),
-            "notify_human": decision.get("notify_human", False),
-            "assessment": decision.get("assessment", ""),
-            "notes": decision.get("notes", ""),
+            "urgency": decision_context.get("urgency", "normal"),
+            "notify_human": decision_context.get("notify_human", False),
+            "assessment": decision_context.get("assessment", ""),
+            "notes": decision_context.get("notes", ""),
         }
 
         validation = validate_action(single, sensor_data, history)
@@ -214,7 +282,8 @@ def run_check(
         if not validation.valid:
             logger.warning("Safety rejected action %s: %s",
                            single["action"], validation.reason)
-            log_decision(sensor_data, single, validation, executed=False, data_dir=data_dir)
+            log_decision(sensor_data, single, validation,
+                         executed=False, data_dir=data_dir, source=source)
             actions_taken.append({
                 "action": single["action"],
                 "executed": False,
@@ -237,32 +306,14 @@ def run_check(
         else:
             executed = True
 
-        log_decision(sensor_data, single, validation, executed=executed, data_dir=data_dir)
+        log_decision(sensor_data, single, validation,
+                     executed=executed, data_dir=data_dir, source=source)
         actions_taken.append({
             "action": final_action.get("action", "unknown"),
             "executed": executed,
         })
 
-    summary["actions_taken"] = actions_taken
-    summary["executed"] = any(a["executed"] for a in actions_taken) if actions_taken else False
-
-    # --- 7. Log observations and handle knowledge updates ---
-    observations = decision.get("observations", [])
-    if observations:
-        log_plant_observations(observations, data_dir, source="scheduled_check")
-    summary["observations"] = observations
-
-    knowledge_update = decision.get("knowledge_update")
-    if knowledge_update:
-        _append_knowledge_update(knowledge_update, data_dir)
-    summary["knowledge_update"] = knowledge_update
-
-    hardware_update = decision.get("hardware_update")
-    if hardware_update and isinstance(hardware_update, dict):
-        _apply_hardware_update(hardware_update, hardware_profile)
-    summary["hardware_update"] = hardware_update
-
-    return summary
+    return actions_taken
 
 
 def _apply_fallback_rules(sensor_data: SensorData) -> dict | None:
@@ -287,7 +338,7 @@ def _apply_fallback_rules(sensor_data: SensorData) -> dict | None:
     return None
 
 
-def _append_knowledge_update(update_text: str, data_dir: str) -> None:
+def append_knowledge_update(update_text: str, data_dir: str) -> None:
     """Append a timestamped AI knowledge update to plant_knowledge.md.
 
     Args:
@@ -302,7 +353,7 @@ def _append_knowledge_update(update_text: str, data_dir: str) -> None:
     logger.info("Appended knowledge update to %s", knowledge_path)
 
 
-def _apply_hardware_update(
+def apply_hardware_update(
     updates: dict[str, Any],
     hardware_profile: dict[str, Any],
 ) -> None:

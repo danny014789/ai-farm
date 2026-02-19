@@ -352,14 +352,8 @@ real-time automated care decisions, so numeric ranges are important."""
 _CHAT_RESPONSE_SCHEMA = """\
 {
   "message": "Your natural language response to the user.",
-  "actions": [
-    {
-      "action": "water|light_on|light_off|heater_on|heater_off|circulation|do_nothing",
-      "params": {"duration_sec": <int, required for water and circulation, omit for others>},
-      "reason": "Why this action is being taken"
-    }
-  ],
   "observations": ["Optional: noteworthy observations worth logging for future reference"],
+  "knowledge_update": "Significant new learning about this plant to remember, or null",
   "hardware_update": {"section.key": "new_value"} or null
 }"""
 
@@ -433,39 +427,30 @@ and helpfully.
 ## Ideal Growing Conditions
 {ideal_block}
 {knowledge_section}{hardware_section}
-## Available Actions
-You can take actions on behalf of the user. If the user asks you to water, adjust \
-light, etc., include the appropriate action in your response.
+## Important: No Hardware Control
+You CANNOT directly control hardware. You cannot water, toggle lights, turn the heater \
+on/off, or run the circulation fan. If the user asks you to perform a hardware action, \
+tell them to use the Telegram slash commands instead: /water, /light, /heater, /circulation.
 
-| Action        | Parameters               |
-|---------------|--------------------------|
-| water         | duration_sec (1-30)      |
-| light_on      | none                     |
-| light_off     | none                     |
-| heater_on     | none                     |
-| heater_off    | none                     |
-| circulation   | duration_sec (10-300)    |
-| do_nothing    | none                     |
-
-## Action Constraints
-- Water: duration_sec 1-30. Minimum 60 minutes between waterings. Do NOT water if the water tank is LOW — tell the user to refill.
-- Circulation: duration_sec 10-300.
-- Heater: Never turn on above {ideal.get("temp_max_c", 28)}C. If heater_lockout is active, the firmware has disabled the heater for safety — do not attempt to turn it on.
-- Light: Respect light schedule. No lights midnight-5am.
-- When in doubt, ask the user rather than acting.
+## What You CAN Do
+- Answer questions about the plant's health, sensor data, and conditions
+- Provide care advice and recommendations
+- Log observations for future reference (via the "observations" array)
+- Record significant learnings about this plant (via "knowledge_update")
+- Update the hardware profile when the user provides hardware specs (via "hardware_update")
 
 ## Guidelines
 1. Be conversational and natural. You are chatting with the plant owner, not generating a report.
 2. Reference the current sensor data, recent history, and your plant log observations when relevant.
-3. If the user asks you to do something (water, lights, etc.), include the action in the "actions" array.
-4. If the user is just asking a question, respond with just a "message" and empty actions.
-5. Be CONSERVATIVE with actions. "water it a bit" means short duration (5s). "give it a good watering" means longer (15-20s).
-6. You can log observations about the conversation in the "observations" array.
-7. The user can tell you about their hardware (e.g. "the pump does about 20ml/sec", "I have a 3L pot"). \
+3. If the user asks you to do something physical (water, lights, heater, fan), direct them to \
+the appropriate slash command (/water, /light, /heater, /circulation).
+4. You can log observations about the conversation in the "observations" array.
+5. The user can tell you about their hardware (e.g. "the pump does about 20ml/sec", "I have a 3L pot"). \
 When they do, include a "hardware_update" dict with dot-notation keys (e.g. "pump.flow_rate_ml_per_sec": 20). \
 Set to null when no update is needed.
-8. The "Current Actuator States" section reflects the actual hardware relay states. Use it to accurately answer questions about what is on or off.
-9. If the water tank is LOW, proactively mention it so the user knows to refill.
+6. The "Current Actuator States" section reflects the actual hardware relay states. Use it to accurately answer questions about what is on or off.
+7. If the water tank is LOW, proactively mention it so the user knows to refill.
+8. If you learn something significant about this specific plant, include it in "knowledge_update". Set to null otherwise.
 
 ## Response Format
 Respond with ONLY a valid JSON object:

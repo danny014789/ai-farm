@@ -131,6 +131,7 @@ def log_decision(
     validation: Any,  # ValidationResult from safety.py
     executed: bool,
     data_dir: str,
+    source: str = "scheduled",
 ) -> None:
     """Append a decision record to decisions.jsonl.
 
@@ -140,11 +141,13 @@ def log_decision(
         validation: ValidationResult from safety.validate_action().
         executed: Whether the action was actually executed.
         data_dir: Path to the data directory.
+        source: Origin of the decision (e.g. "scheduled", "manual_command").
     """
     dirpath = _ensure_dir(data_dir)
 
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": source,
         "sensor_data": sensor_data.to_dict(),
         "decision": decision,
         "validation": {

@@ -27,12 +27,16 @@ from bot.keyboards import (
     plant_stage_keyboard,
 )
 from src.action_executor import ActionExecutor
-from src.actuator_state import reconcile_actuator_state, update_after_action
+from src.actuator_state import reconcile_actuator_state
 from src.claude_client import get_chat_response
-from src.config_loader import load_hardware_profile, load_plant_profile, save_hardware_profile, save_plant_profile
+from src.config_loader import load_hardware_profile, load_plant_profile, save_plant_profile
 from src.logger import load_recent_decisions, load_recent_plant_log, log_plant_observations
+from src.plant_agent import (
+    apply_hardware_update,
+    append_knowledge_update,
+    execute_validated_actions,
+)
 from src.plant_knowledge import ensure_plant_knowledge
-from src.safety import validate_action
 from src.sensor_reader import SensorData, SensorReadError, read_sensors, read_sensors_mock
 
 logger = logging.getLogger(__name__)
@@ -702,33 +706,74 @@ async def _execute_pending_action(
     context: ContextTypes.DEFAULT_TYPE,
     pending: dict[str, Any],
 ) -> None:
-    """Execute a confirmed manual action and report the result."""
-    try:
-        executor = ActionExecutor(
-            _farmctl_path(context), dry_run=_is_dry_run(context)
-        )
-        result = executor.execute(pending)
+    """Execute a confirmed manual action through the full safety pipeline.
 
-        if result.success:
-            mode_tag = " [dry-run]" if result.dry_run else ""
+    Uses the same validate -> execute -> log pipeline as the scheduler
+    so that manual slash commands test the real code path.
+    """
+    farmctl_path = _farmctl_path(context)
+    data_dir = str(_data_dir(context))
+    dry_run = _is_dry_run(context)
+
+    # Read sensors for safety validation
+    try:
+        sensor_data = read_sensors(farmctl_path)
+    except (SensorReadError, Exception) as exc:
+        logger.warning("Sensor read failed for manual action: %s", exc)
+        await query.edit_message_text(
+            f"Cannot execute: sensor read failed ({exc}).\n"
+            "Sensors are required for safety validation."
+        )
+        return
+
+    # Load history for rate limiting
+    history = load_recent_decisions(10, data_dir)
+
+    # Execute through the shared validate -> execute -> log pipeline
+    actions = [{
+        "action": pending["action"],
+        "params": pending.get("params", {}),
+        "reason": "Manual command via Telegram",
+    }]
+    decision_context = {
+        "urgency": "normal",
+        "notify_human": False,
+        "assessment": "Manual command",
+        "notes": "",
+    }
+
+    try:
+        executor = ActionExecutor(farmctl_path, dry_run=dry_run)
+        results = execute_validated_actions(
+            actions=actions,
+            decision_context=decision_context,
+            sensor_data=sensor_data,
+            history=history,
+            executor=executor,
+            data_dir=data_dir,
+            dry_run=dry_run,
+            source="manual_command",
+        )
+
+        if not results:
+            await query.edit_message_text("No action was processed.")
+            return
+
+        result = results[0]
+        action_name = result["action"]
+
+        if result["executed"]:
+            mode_tag = " [dry-run]" if dry_run else ""
             await query.edit_message_text(
-                f"Action executed{mode_tag}: {result.action}\n"
-                f"{result.output}"
+                f"Action executed{mode_tag}: {action_name}"
+            )
+        elif result.get("safety_reason"):
+            await query.edit_message_text(
+                f"Action rejected by safety system: {action_name}\n"
+                f"Reason: {result['safety_reason']}"
             )
         else:
-            await query.edit_message_text(
-                f"Action failed: {result.action}\n"
-                f"Error: {result.error}"
-            )
-
-        # Log the manual action
-        _log_decision(
-            _decisions_path(context),
-            action=result.action,
-            reason="Manual command via Telegram",
-            dry_run=result.dry_run,
-            success=result.success,
-        )
+            await query.edit_message_text(f"Action failed: {action_name}")
 
     except Exception as exc:
         logger.exception("Error executing confirmed action")
@@ -828,7 +873,12 @@ async def _research_plant(
 async def chat_message_handler(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Handle free-text messages — natural language chat with the AI."""
+    """Handle free-text messages — natural language chat with the AI.
+
+    Chat is advisory only: it can answer questions, log observations,
+    and update hardware/knowledge profiles, but cannot execute hardware
+    actions. Users should use slash commands for hardware control.
+    """
     user_message = update.message.text
     if not user_message:
         return
@@ -873,91 +923,25 @@ async def chat_message_handler(
         await update.message.reply_text(f"Sorry, I had trouble thinking: {exc}")
         return
 
-    # Execute any actions the AI wants to take
-    actions = response.get("actions", [])
-    action_results: list[str] = []
-    executor = ActionExecutor(
-        _farmctl_path(context), dry_run=_is_dry_run(context)
-    )
-
-    for action_spec in actions:
-        action_name = action_spec.get("action", "")
-        params = action_spec.get("params", {})
-        reason = action_spec.get("reason", "")
-
-        if not validate_action({"action": action_name, "params": params}):
-            action_results.append(f"Rejected: {action_name} (failed safety check)")
-            continue
-
-        try:
-            result = executor.execute({"action": action_name, "params": params})
-            if result.success:
-                mode_tag = " [dry-run]" if result.dry_run else ""
-                action_results.append(f"Executed{mode_tag}: {action_name}")
-                update_after_action(action_name, data_dir)
-            else:
-                action_results.append(f"Failed: {action_name} - {result.error}")
-
-            _log_decision(
-                _decisions_path(context),
-                action=action_name,
-                reason=reason or "Chat request",
-                dry_run=result.dry_run,
-                success=result.success,
-            )
-        except Exception as exc:
-            logger.exception("Action execution failed in chat: %s", action_name)
-            action_results.append(f"Error: {action_name} - {exc}")
-
     # Log observations
     observations = response.get("observations", [])
     if observations:
         log_plant_observations(observations, data_dir, source="chat")
 
-    # Apply hardware updates
+    # Apply knowledge updates
+    knowledge_update = response.get("knowledge_update")
+    if knowledge_update:
+        append_knowledge_update(knowledge_update, data_dir)
+
+    # Apply hardware profile updates
     hw_update = response.get("hardware_update")
     if hw_update and isinstance(hw_update, dict):
-        for dotkey, value in hw_update.items():
-            parts = dotkey.split(".")
-            target = hardware_profile
-            for part in parts[:-1]:
-                if part not in target or not isinstance(target[part], dict):
-                    target[part] = {}
-                target = target[part]
-            target[parts[-1]] = value
-        try:
-            save_hardware_profile(hardware_profile)
-            logger.info("Hardware profile updated via chat: %s", hw_update)
-        except Exception as exc:
-            logger.error("Failed to save hardware profile: %s", exc)
+        apply_hardware_update(hw_update, hardware_profile)
 
     # Build reply
     reply = response.get("message", "")
-    if action_results:
-        reply += "\n\n" + "\n".join(action_results)
 
     if reply.strip():
         await _send_long_message(update.message, reply)
     else:
         await update.message.reply_text("I'm not sure what to say about that.")
-
-
-def _log_decision(
-    decisions_path: Path,
-    action: str,
-    reason: str,
-    dry_run: bool,
-    success: bool,
-) -> None:
-    """Append a decision entry to the JSONL log file."""
-    decisions_path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "action": action,
-        "reason": reason,
-        "dry_run": dry_run,
-        "success": success,
-        "source": "telegram_manual",
-    }
-    with open(decisions_path, "a") as f:
-        f.write(json.dumps(entry) + "\n")

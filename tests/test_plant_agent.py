@@ -7,7 +7,7 @@ import pytest
 
 from src.plant_agent import (
     FALLBACK_RULES,
-    _append_knowledge_update,
+    append_knowledge_update,
     _apply_fallback_rules,
     format_summary_text,
     run_check,
@@ -628,15 +628,15 @@ class TestRunCheckSafetyRejection:
 
 
 # ---------------------------------------------------------------------------
-# _append_knowledge_update
+# append_knowledge_update
 # ---------------------------------------------------------------------------
 
 
 class TestAppendKnowledgeUpdate:
     def test_creates_file_and_appends(self, tmp_path):
-        """_append_knowledge_update appends timestamped entry to plant_knowledge.md."""
+        """append_knowledge_update appends timestamped entry to plant_knowledge.md."""
         data_dir = str(tmp_path)
-        _append_knowledge_update("Basil prefers morning watering", data_dir)
+        append_knowledge_update("Basil prefers morning watering", data_dir)
 
         knowledge_path = tmp_path / "plant_knowledge.md"
         assert knowledge_path.exists()
@@ -647,8 +647,8 @@ class TestAppendKnowledgeUpdate:
     def test_appends_multiple(self, tmp_path):
         """Multiple calls append multiple entries."""
         data_dir = str(tmp_path)
-        _append_knowledge_update("First insight", data_dir)
-        _append_knowledge_update("Second insight", data_dir)
+        append_knowledge_update("First insight", data_dir)
+        append_knowledge_update("Second insight", data_dir)
 
         content = (tmp_path / "plant_knowledge.md").read_text()
         assert "First insight" in content
