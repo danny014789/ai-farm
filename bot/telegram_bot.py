@@ -7,7 +7,7 @@ through python-telegram-bot's JobQueue).
 
 Environment variables:
     TELEGRAM_BOT_TOKEN  - Bot token from @BotFather (required)
-    TELEGRAM_CHAT_ID    - Authorized user's chat ID (required)
+    TELEGRAM_CHAT_ID    - Comma-separated authorized chat IDs (required)
     FARMCTL_PATH        - Path to farmctl.py (default: ~/farmctl/farmctl.py)
     DATA_DIR            - Data directory (default: data/)
     AGENT_MODE          - "dry-run" (default) or "live"
@@ -85,7 +85,7 @@ async def scheduled_check(context: ContextTypes.DEFAULT_TYPE) -> None:
     bot_data = context.bot_data
     data_dir = bot_data.get("data_dir", "data")
     pause_file = Path(data_dir) / ".paused"
-    chat_id = bot_data.get("authorized_chat_id")
+    chat_ids = bot_data.get("authorized_chat_ids", [])
     farmctl_path = bot_data.get("farmctl_path", "")
     agent_mode = bot_data.get("agent_mode", "dry-run")
 
@@ -106,36 +106,41 @@ async def scheduled_check(context: ContextTypes.DEFAULT_TYPE) -> None:
             include_photo=take_photo,
         )
 
-        # Send summary to Telegram
-        if chat_id:
+        # Send summary to all authorized users
+        if chat_ids:
             text = format_summary_text(summary)
-            await context.bot.send_message(chat_id=chat_id, text=text)
-
-            # Send photo if one was captured
             photo_path = summary.get("photo_path")
-            if photo_path and Path(photo_path).exists():
+            has_photo = photo_path and Path(photo_path).exists()
+
+            for chat_id in chat_ids:
                 try:
-                    with open(photo_path, "rb") as f:
-                        await context.bot.send_photo(
-                            chat_id=chat_id,
-                            photo=f,
-                            caption="Scheduled plant photo",
+                    await context.bot.send_message(chat_id=chat_id, text=text)
+                    if has_photo:
+                        with open(photo_path, "rb") as f:
+                            await context.bot.send_photo(
+                                chat_id=chat_id,
+                                photo=f,
+                                caption="Scheduled plant photo",
+                            )
+                except BadRequest as exc:
+                    if "chat not found" in str(exc).lower():
+                        logger.error(
+                            "Chat ID %s not found - check TELEGRAM_CHAT_ID "
+                            "in .env. Send /start to the bot first.",
+                            chat_id,
+                        )
+                    else:
+                        logger.error(
+                            "Telegram error sending to %s: %s", chat_id, exc
                         )
                 except Exception:
-                    logger.warning("Failed to send scheduled photo")
+                    logger.warning(
+                        "Failed to send scheduled check to %s", chat_id
+                    )
 
-    except BadRequest as exc:
-        if "chat not found" in str(exc).lower():
-            logger.error(
-                "Chat ID %s not found - check TELEGRAM_CHAT_ID in .env. "
-                "Make sure you have sent /start to the bot first.",
-                chat_id,
-            )
-        else:
-            logger.error("Telegram error in scheduled check: %s", exc)
     except Exception as exc:
         logger.exception("Scheduled check failed")
-        if chat_id:
+        for chat_id in chat_ids:
             try:
                 await context.bot.send_message(
                     chat_id=chat_id,
@@ -143,7 +148,8 @@ async def scheduled_check(context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
             except BadRequest:
                 logger.error(
-                    "Cannot send error notification - chat %s not found", chat_id
+                    "Cannot send error notification - chat %s not found",
+                    chat_id,
                 )
             except Exception:
                 logger.exception("Failed to send error notification")
@@ -193,21 +199,22 @@ async def _error_handler(
 
 async def _post_init(application: Application) -> None:
     """Validate configuration after the bot connects to Telegram."""
-    chat_id = application.bot_data.get("authorized_chat_id")
-    if not chat_id:
+    chat_ids = application.bot_data.get("authorized_chat_ids", [])
+    if not chat_ids:
         return
-    try:
-        await application.bot.get_chat(chat_id)
-        logger.info("Chat ID %s verified OK", chat_id)
-    except BadRequest:
-        logger.warning(
-            "TELEGRAM_CHAT_ID=%s is not reachable. Scheduled messages "
-            "will fail. Send /start to the bot from the correct account, "
-            "or fix the chat ID in .env.",
-            chat_id,
-        )
-    except Exception as exc:
-        logger.warning("Could not verify chat ID %s: %s", chat_id, exc)
+    for chat_id in chat_ids:
+        try:
+            await application.bot.get_chat(chat_id)
+            logger.info("Chat ID %s verified OK", chat_id)
+        except BadRequest:
+            logger.warning(
+                "TELEGRAM_CHAT_ID=%s is not reachable. Scheduled messages "
+                "will fail. Send /start to the bot from the correct account, "
+                "or fix the chat ID in .env.",
+                chat_id,
+            )
+        except Exception as exc:
+            logger.warning("Could not verify chat ID %s: %s", chat_id, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -230,13 +237,14 @@ def main() -> None:
         logger.error("TELEGRAM_BOT_TOKEN environment variable is required")
         sys.exit(1)
 
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    chat_id_str = os.getenv("TELEGRAM_CHAT_ID", "")
+    chat_ids = [cid.strip() for cid in chat_id_str.split(",") if cid.strip()]
     farmctl_path = os.getenv("FARMCTL_PATH", os.path.expanduser("~/farmctl/farmctl.py"))
     data_dir = os.getenv("DATA_DIR", "data")
     agent_mode = os.getenv("AGENT_MODE", "dry-run")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
 
-    if not chat_id:
+    if not chat_ids:
         logger.warning(
             "TELEGRAM_CHAT_ID not set - bot will accept commands from anyone!"
         )
@@ -258,7 +266,7 @@ def main() -> None:
     )
 
     # Store config in bot_data for handlers to access
-    application.bot_data["authorized_chat_id"] = chat_id
+    application.bot_data["authorized_chat_ids"] = chat_ids
     application.bot_data["farmctl_path"] = farmctl_path
     application.bot_data["data_dir"] = data_dir
     application.bot_data["agent_mode"] = agent_mode
@@ -303,9 +311,9 @@ def main() -> None:
 
     # --- Start polling -----------------------------------------------------
     logger.info(
-        "Plant-Ops AI bot starting (mode=%s, chat_id=%s)",
+        "Plant-Ops AI bot starting (mode=%s, authorized_users=%s)",
         agent_mode,
-        chat_id or "ANY",
+        len(chat_ids) if chat_ids else "ANY",
     )
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,

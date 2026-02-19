@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_MODEL = "claude-sonnet-4-6-latest"
 MAX_DECISION_TOKENS = 1024
 MAX_RESEARCH_TOKENS = 4096
 MAX_RETRIES = 3
@@ -218,6 +218,7 @@ def get_plant_decision(
     plant_knowledge: str,
     history: list[dict[str, Any]],
     photo_path: str | None = None,
+    actuator_state: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Call Claude to get a plant care decision based on current conditions.
 
@@ -228,9 +229,10 @@ def get_plant_decision(
         plant_knowledge: Cached plant knowledge markdown string.
         history: Recent decision history (list of dicts, most recent first).
         photo_path: Optional filesystem path to a current plant photo.
+        actuator_state: Optional dict of current actuator states.
 
     Returns:
-        Parsed decision dict with keys: assessment, action, params, reason,
+        Parsed decision dict with keys: assessment, actions (list),
         urgency, notify_human, notes.
 
     Raises:
@@ -250,6 +252,7 @@ def get_plant_decision(
         history=history,
         current_time=current_time,
         photo_path=photo_path,
+        actuator_state=actuator_state,
     )
 
     logger.info(
@@ -291,8 +294,18 @@ def get_plant_decision(
 
     decision = _extract_json(raw_text)
 
+    # Normalize old single-action format to multi-action format
+    if "action" in decision and "actions" not in decision:
+        decision["actions"] = [
+            {
+                "action": decision.pop("action"),
+                "params": decision.pop("params", {}),
+                "reason": decision.pop("reason", ""),
+            }
+        ]
+
     # Validate required keys are present
-    required_keys = {"assessment", "action", "reason", "urgency", "notify_human"}
+    required_keys = {"assessment", "actions", "urgency", "notify_human"}
     missing = required_keys - set(decision.keys())
     if missing:
         logger.warning(
@@ -300,16 +313,18 @@ def get_plant_decision(
             missing,
             raw_text[:300],
         )
-        # Fill in safe defaults for missing keys
         decision.setdefault("assessment", "Unable to assess (incomplete response)")
-        decision.setdefault("action", "do_nothing")
-        decision.setdefault("params", {})
-        decision.setdefault("reason", "Incomplete AI response -- defaulting to no action")
+        decision.setdefault("actions", [{"action": "do_nothing", "params": {}, "reason": "Incomplete AI response -- defaulting to no action"}])
         decision.setdefault("urgency", "attention")
         decision.setdefault("notify_human", True)
         decision.setdefault("notes", f"Missing keys in AI response: {missing}")
 
-    decision.setdefault("params", {})
+    # Fill defaults per action in the actions list
+    for act in decision.get("actions", []):
+        act.setdefault("action", "do_nothing")
+        act.setdefault("params", {})
+        act.setdefault("reason", "")
+
     decision.setdefault("notes", "")
 
     return decision

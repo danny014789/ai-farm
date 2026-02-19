@@ -34,9 +34,13 @@ VALID_URGENCIES = ("normal", "attention", "critical")
 _RESPONSE_SCHEMA = """\
 {
   "assessment": "Brief plant health assessment (1-2 sentences)",
-  "action": "water|light_on|light_off|heater_on|heater_off|circulation|do_nothing",
-  "params": {"duration_sec": <int, required for water and circulation, omit for others>},
-  "reason": "Why this action is needed or why no action is needed",
+  "actions": [
+    {
+      "action": "water|light_on|light_off|heater_on|heater_off|circulation|do_nothing",
+      "params": {"duration_sec": <int, required for water and circulation, omit for others>},
+      "reason": "Why this specific action is needed"
+    }
+  ],
   "urgency": "normal|attention|critical",
   "notify_human": <true|false>,
   "notes": "Any additional observations, concerns, or recommendations"
@@ -98,7 +102,7 @@ You are a plant care expert AI agent responsible for a single plant growing in a
 {ideal_block}
 {knowledge_section}
 ## Available Actions
-You may recommend exactly ONE action per evaluation. Choose from:
+You may recommend one or more actions per evaluation. Choose from:
 
 | Action        | Description                        | Parameters               |
 |---------------|------------------------------------|--------------------------|
@@ -130,6 +134,9 @@ Respond with ONLY a valid JSON object. No markdown fences, no extra text, no exp
 
 {_RESPONSE_SCHEMA}
 
+Always use the "actions" array, even for a single action or no action (use an empty array or a single-element array).
+Order actions by priority (most important first).
+
 Do NOT include any text before or after the JSON object."""
 
 
@@ -138,6 +145,7 @@ def build_user_prompt(
     history: list[dict[str, Any]],
     current_time: str,
     photo_path: str | None = None,
+    actuator_state: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Build the user message content blocks for a decision request.
 
@@ -152,6 +160,8 @@ def build_user_prompt(
         current_time: Human-readable current date/time string
             (e.g., "2026-02-18 14:30:00").
         photo_path: Optional path to a plant photo (JPEG/PNG).
+        actuator_state: Optional dict of current actuator states
+            (e.g. {"light": "on", "heater": "off", ...}).
 
     Returns:
         List of content block dicts for the messages API.
@@ -161,10 +171,16 @@ def build_user_prompt(
     # --- Sensor data text block ---
     sensor_text = _format_sensor_data(sensor_data)
     history_text = _format_history(history)
+    actuator_text = _format_actuator_state(actuator_state) if actuator_state else ""
+
+    actuator_section = ""
+    if actuator_text:
+        actuator_section = f"## Current Actuator States\n{actuator_text}\n\n"
 
     text_block = (
         f"## Current Time\n{current_time}\n\n"
         f"## Current Sensor Readings\n{sensor_text}\n\n"
+        f"{actuator_section}"
         f"## Recent Decision History (last {len(history)} decisions)\n{history_text}\n\n"
         "Analyze the current plant status and return your JSON decision."
     )
@@ -298,6 +314,18 @@ def _format_sensor_data(sensor_data: dict[str, Any]) -> str:
         f"- Light level: {sensor_data.get('light_level', 'N/A')}",
         f"- Soil moisture: {sensor_data.get('soil_moisture_pct', 'N/A')}%",
     ]
+    return "\n".join(lines)
+
+
+def _format_actuator_state(state: dict[str, str]) -> str:
+    """Format actuator state dict into a readable text block."""
+    labels = {
+        "light": "Grow light",
+        "heater": "Heater",
+        "pump": "Water pump",
+        "circulation": "Circulation fan",
+    }
+    lines = [f"- {labels.get(k, k)}: {v}" for k, v in state.items()]
     return "\n".join(lines)
 
 

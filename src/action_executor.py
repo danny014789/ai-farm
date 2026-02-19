@@ -192,6 +192,71 @@ class ActionExecutor:
         logger.error("Photo capture failed: %s", output_or_error)
         return None
 
+    def take_photo_with_light(
+        self,
+        output_path: str,
+        data_dir: str | None = None,
+        settle_time: float = 2.0,
+    ) -> str | None:
+        """Turn on light, take photo, turn off light.
+
+        Ensures the plant is illuminated for the photo. Resilient to
+        partial failures: if light_on fails, still attempts the photo;
+        if the photo fails, still turns the light off.
+
+        Args:
+            output_path: Filesystem path where the image should be saved.
+            data_dir: If provided, update actuator_state.json after
+                light_on and light_off commands.
+            settle_time: Seconds to wait after light_on for brightness
+                to stabilize.
+
+        Returns:
+            The photo path on success, or None on failure.
+        """
+        import time
+        from src.actuator_state import update_after_action
+
+        # --- Step 1: Turn light on ---
+        light_on_ok = False
+        light_on_args = ["light", "on"]
+        if self._dry_run:
+            cmd = f"python3 {self._farmctl_path} {' '.join(light_on_args)}"
+            logger.info("[DRY-RUN] Would execute: %s", cmd)
+            light_on_ok = True
+        else:
+            logger.info("Turning light on for photo capture")
+            success, msg = self._run_farmctl(light_on_args)
+            light_on_ok = success
+            if success:
+                if data_dir:
+                    update_after_action("light_on", data_dir)
+            else:
+                logger.warning("light_on failed before photo, continuing: %s", msg)
+
+        # --- Step 2: Wait for light to stabilize ---
+        if light_on_ok and not self._dry_run:
+            time.sleep(settle_time)
+
+        # --- Step 3: Take photo ---
+        photo_path = self.take_photo(output_path)
+
+        # --- Step 4: Turn light off ---
+        light_off_args = ["light", "off"]
+        if self._dry_run:
+            cmd = f"python3 {self._farmctl_path} {' '.join(light_off_args)}"
+            logger.info("[DRY-RUN] Would execute: %s", cmd)
+        else:
+            logger.info("Turning light off after photo capture")
+            success, msg = self._run_farmctl(light_off_args)
+            if success:
+                if data_dir:
+                    update_after_action("light_off", data_dir)
+            else:
+                logger.warning("light_off failed after photo: %s", msg)
+
+        return photo_path
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

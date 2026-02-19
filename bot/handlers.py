@@ -38,19 +38,19 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def authorized_only(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
-    """Decorator to restrict commands to the authorized chat ID.
+    """Decorator to restrict commands to authorized chat IDs.
 
-    The allowed chat ID is read from ``context.bot_data["authorized_chat_id"]``.
-    If the value is unset or empty, all users are allowed (useful for initial
-    setup / development).
+    The allowed IDs are read from ``context.bot_data["authorized_chat_ids"]``
+    (a list of string chat IDs). If the list is empty, all users are allowed
+    (useful for initial setup / development).
     """
 
     @functools.wraps(func)
     async def wrapper(
         update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> Any:
-        allowed = context.bot_data.get("authorized_chat_id")
-        if allowed and str(update.effective_chat.id) != str(allowed):
+        allowed_ids = context.bot_data.get("authorized_chat_ids", [])
+        if allowed_ids and str(update.effective_chat.id) not in allowed_ids:
             await update.message.reply_text("Unauthorized.")
             return
         return await func(update, context)
@@ -703,7 +703,7 @@ async def _research_plant(
         )
 
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6-latest",
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )

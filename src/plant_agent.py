@@ -24,6 +24,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.action_executor import ActionExecutor
+from src.actuator_state import load_actuator_state, update_after_action
 from src.claude_client import get_plant_decision
 from src.config_loader import load_plant_profile
 from src.logger import (
@@ -32,7 +33,7 @@ from src.logger import (
     log_sensor_reading,
 )
 from src.plant_knowledge import ensure_plant_knowledge
-from src.safety import validate_action, ValidationResult
+from src.safety import validate_action
 from src.sensor_reader import SensorData, SensorReadError, read_sensors, read_sensors_mock
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ def run_check(
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "sensor_data": None,
         "decision": None,
-        "validation": None,
+        "actions_taken": [],
         "executed": False,
         "photo_path": None,
         "error": None,
@@ -111,12 +112,13 @@ def run_check(
     summary["sensor_data"] = sensor_data.to_dict()
     log_sensor_reading(sensor_data, data_dir)
 
-    # --- 2. Optionally capture photo ---
+    # --- 2. Optionally capture photo (with light) ---
     photo_path = None
     if include_photo and not use_mock:
-        executor = ActionExecutor(farmctl_path, dry_run=False)
-        photo_path = executor.take_photo(
-            os.path.join(data_dir, "plant_latest.jpg")
+        photo_executor = ActionExecutor(farmctl_path, dry_run=False)
+        photo_path = photo_executor.take_photo_with_light(
+            output_path=os.path.join(data_dir, "plant_latest.jpg"),
+            data_dir=data_dir if not dry_run else None,
         )
         if photo_path:
             logger.info("Photo captured: %s", photo_path)
@@ -136,7 +138,10 @@ def run_check(
         except Exception as e:
             logger.warning("Failed to load plant knowledge: %s", e)
 
-    # --- 4. Ask Claude for decision ---
+    # --- 4. Load actuator state ---
+    actuator_state = load_actuator_state(data_dir)
+
+    # --- 5. Ask Claude for decision ---
     decision = None
     try:
         decision = get_plant_decision(
@@ -145,20 +150,22 @@ def run_check(
             plant_knowledge=plant_knowledge,
             history=history,
             photo_path=photo_path,
+            actuator_state=actuator_state,
         )
-        logger.info("Claude decision: action=%s reason=%s",
-                     decision.get("action"), decision.get("reason"))
+        actions_summary = ", ".join(
+            a.get("action", "?") for a in decision.get("actions", [])
+        )
+        logger.info("Claude decision: actions=[%s]", actions_summary)
     except Exception as e:
         logger.error("Claude API call failed: %s", e)
         # Apply offline fallback rules
         decision = _apply_fallback_rules(sensor_data)
         if decision:
-            logger.info("Applying offline fallback: %s", decision.get("reason"))
+            logger.info("Applying offline fallback: %s",
+                        decision.get("actions", [{}])[0].get("reason", ""))
         else:
             decision = {
-                "action": "do_nothing",
-                "params": {},
-                "reason": f"API unreachable, no fallback triggered: {e}",
+                "actions": [{"action": "do_nothing", "params": {}, "reason": f"API unreachable, no fallback triggered: {e}"}],
                 "urgency": "attention",
                 "notify_human": True,
                 "assessment": "Unable to reach Claude API",
@@ -167,40 +174,58 @@ def run_check(
 
     summary["decision"] = decision
 
-    # --- 5. Validate via safety module ---
-    validation = validate_action(decision, sensor_data, history)
-    summary["validation"] = {
-        "valid": validation.valid,
-        "reason": validation.reason,
-        "capped_action": validation.capped_action,
-    }
+    # --- 6. Validate, execute, and log each action ---
+    executor = ActionExecutor(farmctl_path, dry_run=dry_run)
+    actions_taken: list[dict] = []
 
-    if not validation.valid:
-        logger.warning("Safety rejected action: %s", validation.reason)
-        log_decision(sensor_data, decision, validation, executed=False, data_dir=data_dir)
-        return summary
+    for act in decision.get("actions", []):
+        # Build a single-action dict for safety validation
+        single = {
+            "action": act.get("action", "do_nothing"),
+            "params": act.get("params", {}),
+            "reason": act.get("reason", ""),
+            "urgency": decision.get("urgency", "normal"),
+            "notify_human": decision.get("notify_human", False),
+            "assessment": decision.get("assessment", ""),
+            "notes": decision.get("notes", ""),
+        }
 
-    # Use the safety-capped action (e.g. water 60s -> capped to 30s)
-    final_action = validation.capped_action or decision
+        validation = validate_action(single, sensor_data, history)
 
-    # --- 6. Execute ---
-    executed = False
-    if final_action.get("action") not in ("do_nothing", "notify_human"):
-        executor = ActionExecutor(farmctl_path, dry_run=dry_run)
-        result = executor.execute(final_action)
-        executed = result.success
-        if not result.success:
-            logger.error("Action execution failed: %s", result.error)
-            summary["error"] = f"Execution failed: {result.error}"
+        if not validation.valid:
+            logger.warning("Safety rejected action %s: %s",
+                           single["action"], validation.reason)
+            log_decision(sensor_data, single, validation, executed=False, data_dir=data_dir)
+            actions_taken.append({
+                "action": single["action"],
+                "executed": False,
+                "safety_reason": validation.reason,
+            })
+            continue
+
+        final_action = validation.capped_action or single
+
+        executed = False
+        if final_action.get("action") not in ("do_nothing", "notify_human"):
+            result = executor.execute(final_action)
+            executed = result.success
+            if not result.success:
+                logger.error("Action execution failed: %s", result.error)
+            else:
+                logger.info("Action executed: %s", result.command)
+                if not dry_run:
+                    update_after_action(final_action["action"], data_dir)
         else:
-            logger.info("Action executed: %s", result.command)
-    else:
-        executed = True  # do_nothing / notify_human are always "successful"
+            executed = True
 
-    summary["executed"] = executed
+        log_decision(sensor_data, single, validation, executed=executed, data_dir=data_dir)
+        actions_taken.append({
+            "action": final_action.get("action", "unknown"),
+            "executed": executed,
+        })
 
-    # --- 7. Log ---
-    log_decision(sensor_data, decision, validation, executed=executed, data_dir=data_dir)
+    summary["actions_taken"] = actions_taken
+    summary["executed"] = any(a["executed"] for a in actions_taken) if actions_taken else False
 
     return summary
 
@@ -208,14 +233,17 @@ def run_check(
 def _apply_fallback_rules(sensor_data: SensorData) -> dict | None:
     """Check offline fallback rules against current sensor data.
 
-    Returns the first matching rule's action, or None if no rules match.
+    Returns the first matching rule's decision (multi-action format),
+    or None if no rules match.
     """
     for name, rule in FALLBACK_RULES.items():
         if rule["condition"](sensor_data):
             return {
-                "action": rule["action"]["action"],
-                "params": rule["action"].get("params", {}),
-                "reason": rule["reason"],
+                "actions": [{
+                    "action": rule["action"]["action"],
+                    "params": rule["action"].get("params", {}),
+                    "reason": rule["reason"],
+                }],
                 "urgency": "attention",
                 "notify_human": True,
                 "assessment": f"Offline mode - fallback rule: {name}",
@@ -251,32 +279,36 @@ def format_summary_text(summary: dict) -> str:
 
     dec = summary.get("decision")
     if dec:
-        action = dec.get("action", "unknown")
-        reason = dec.get("reason", "")
         urgency = dec.get("urgency", "normal")
         urgency_icon = {"normal": "🟢", "attention": "🟡", "critical": "🔴"}.get(
             urgency, "⚪"
         )
-        lines.append(f"🤖 Decision: {action} {urgency_icon}")
-        lines.append(f"  Reason: {reason}")
+        actions = dec.get("actions", [])
+        if actions:
+            action_names = ", ".join(a.get("action", "?") for a in actions)
+            lines.append(f"🤖 Decision: {action_names} {urgency_icon}")
+            for a in actions:
+                lines.append(f"  - {a.get('action', '?')}: {a.get('reason', '')}")
+        else:
+            lines.append(f"🤖 Decision: no actions {urgency_icon}")
         if dec.get("notes"):
             lines.append(f"  Notes: {dec['notes']}")
         lines.append("")
 
-    val = summary.get("validation")
-    if val:
-        if val["valid"]:
-            lines.append("✅ Safety: Approved")
-        else:
-            lines.append(f"❌ Safety: Rejected — {val['reason']}")
-        lines.append("")
-
-    if summary.get("executed"):
-        lines.append("⚡ Action executed")
+    actions_taken = summary.get("actions_taken", [])
+    if actions_taken:
+        for at in actions_taken:
+            name = at.get("action", "?")
+            if at.get("executed"):
+                lines.append(f"⚡ {name}: executed")
+            elif at.get("safety_reason"):
+                lines.append(f"❌ {name}: rejected — {at['safety_reason']}")
+            else:
+                lines.append(f"⏸ {name}: not executed")
     elif summary.get("error"):
         lines.append(f"⚠️ Error: {summary['error']}")
     else:
-        lines.append("⏸ Action not executed")
+        lines.append("⏸ No actions taken")
 
     return "\n".join(lines)
 
