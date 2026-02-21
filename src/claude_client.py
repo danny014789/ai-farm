@@ -433,6 +433,7 @@ def get_chat_response(
     result.setdefault("observations", [])
     result.setdefault("knowledge_update", None)
     result.setdefault("hardware_update", None)
+    result.setdefault("plant_update", None)
 
     return result
 
