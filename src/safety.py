@@ -345,7 +345,7 @@ def _validate_circulation(
         history, now, minutes=min_interval, action_type="circulation"
     )
     if recent_circ:
-        last = recent_circ[-1].get("executed_at", "unknown")
+        last = recent_circ[-1].get("timestamp", "unknown")
         return ValidationResult(
             valid=False,
             reason=f"Circulation rate limit: must wait {min_interval} min. "
