@@ -254,7 +254,7 @@ def get_plant_decision(
     client = _get_client()
     model = _get_model()
 
-    current_time = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    current_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
     system_prompt = build_system_prompt(plant_profile, plant_knowledge, hardware_profile)
     user_content = build_user_prompt(
@@ -381,7 +381,7 @@ def get_chat_response(
     client = _get_client()
     model = _get_model()
 
-    current_time = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    current_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
     system_prompt = build_chat_system_prompt(plant_profile, plant_knowledge, hardware_profile)
     user_content = build_chat_user_prompt(
