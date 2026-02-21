@@ -253,7 +253,11 @@ def build_user_prompt(
                     "type": "text",
                     "text": (
                         "A photo of the plant is attached above. "
-                        "Examine it for visual signs of stress, pests, disease, "
+                        "Note: the photo was taken with the grow light temporarily "
+                        "switched on for illumination — the grow light's actual "
+                        "current state is shown in 'Current Actuator States' above, "
+                        "not inferred from the photo brightness. "
+                        "Examine the photo for visual signs of stress, pests, disease, "
                         "wilting, or discoloration and factor your observations "
                         "into the decision."
                     ),
@@ -354,7 +358,8 @@ _CHAT_RESPONSE_SCHEMA = """\
   "message": "Your natural language response to the user.",
   "observations": ["Optional: noteworthy observations worth logging for future reference"],
   "knowledge_update": "Significant new learning about this plant to remember, or null",
-  "hardware_update": {"section.key": "new_value"} or null
+  "hardware_update": {"section.key": "new_value"} or null,
+  "plant_update": {"dot.notation.key": "new_value"} or null
 }"""
 
 
@@ -438,6 +443,7 @@ tell them to use the Telegram slash commands instead: /water, /light, /heater, /
 - Log observations for future reference (via the "observations" array)
 - Record significant learnings about this plant (via "knowledge_update")
 - Update the hardware profile when the user provides hardware specs (via "hardware_update")
+- Update the plant's ideal growing conditions when the user requests it (via "plant_update")
 
 ## Guidelines
 1. Be conversational and natural. You are chatting with the plant owner, not generating a report.
@@ -448,9 +454,17 @@ the appropriate slash command (/water, /light, /heater, /circulation).
 5. The user can tell you about their hardware (e.g. "the pump does about 20ml/sec", "I have a 3L pot"). \
 When they do, include a "hardware_update" dict with dot-notation keys (e.g. "pump.flow_rate_ml_per_sec": 20). \
 Set to null when no update is needed.
-6. The "Current Actuator States" section reflects the actual hardware relay states. Use it to accurately answer questions about what is on or off.
-7. If the water tank is LOW, proactively mention it so the user knows to refill.
-8. If you learn something significant about this specific plant, include it in "knowledge_update". Set to null otherwise.
+6. The user can ask you to change their plant's target conditions (e.g. "set light hours to 16", \
+"change target temperature to 20-26C", "update soil moisture to 40-65%"). When they do, include a \
+"plant_update" dict with dot-notation keys from these allowed fields: \
+"ideal_conditions.light_hours", "ideal_conditions.temp_min_c", "ideal_conditions.temp_max_c", \
+"ideal_conditions.humidity_min_pct", "ideal_conditions.humidity_max_pct", \
+"ideal_conditions.soil_moisture_min_pct", "ideal_conditions.soil_moisture_max_pct", \
+"ideal_conditions.co2_min_ppm", "plant.notes", "plant.growth_stage", "plant.planted_date". \
+Set to null when no update is needed. Do NOT change plant.name via this field (use /setplant instead).
+7. The "Current Actuator States" section reflects the actual hardware relay states. Use it to accurately answer questions about what is on or off.
+8. If the water tank is LOW, proactively mention it so the user knows to refill.
+9. If you learn something significant about this specific plant, include it in "knowledge_update". Set to null otherwise.
 
 ## Response Format
 Respond with ONLY a valid JSON object:
@@ -628,17 +642,21 @@ def _format_history(history: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for i, entry in enumerate(history, start=1):
         timestamp = entry.get("timestamp", "?")
-        action = entry.get("action", "?")
-        reason = entry.get("reason", "")
-        params = entry.get("params", {})
-        urgency = entry.get("urgency", "normal")
+        # Decision data is nested under the "decision" key in log records.
+        decision = entry.get("decision", {})
+        action = decision.get("action", "?")
+        reason = decision.get("reason", "")
+        params = decision.get("params", {})
+        urgency = decision.get("urgency", "normal")
+        executed = entry.get("executed", True)
 
         param_str = ""
         if params:
             param_str = " | " + ", ".join(f"{k}={v}" for k, v in params.items())
 
+        exec_str = "" if executed else " [not executed]"
         lines.append(
-            f"{i}. [{timestamp}] {action}{param_str} (urgency: {urgency}) - {reason}"
+            f"{i}. [{timestamp}] {action}{param_str} (urgency: {urgency}){exec_str} - {reason}"
         )
 
     return "\n".join(lines)

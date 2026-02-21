@@ -938,6 +938,22 @@ async def chat_message_handler(
     if hw_update and isinstance(hw_update, dict):
         apply_hardware_update(hw_update, hardware_profile)
 
+    # Apply plant profile updates (ideal conditions, notes, growth stage, etc.)
+    plant_update = response.get("plant_update")
+    if plant_update and isinstance(plant_update, dict):
+        try:
+            current_profile = load_plant_profile()
+            for dotkey, value in plant_update.items():
+                parts = dotkey.split(".")
+                target = current_profile
+                for part in parts[:-1]:
+                    target = target.setdefault(part, {})
+                target[parts[-1]] = value
+                logger.info("Plant profile updated: %s = %s", dotkey, value)
+            save_plant_profile(current_profile)
+        except Exception as exc:
+            logger.error("Failed to apply plant_update: %s", exc)
+
     # Build reply
     reply = response.get("message", "")
 

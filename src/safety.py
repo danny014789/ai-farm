@@ -380,7 +380,7 @@ def _actions_in_window(
     """Filter history to actions within the last N minutes.
 
     Args:
-        history: List of action dicts with "executed_at" timestamps.
+        history: List of decision log records with "timestamp" and nested "decision" keys.
         now: Current time (timezone-aware).
         minutes: Window size in minutes.
         action_type: If set, only include actions of this type.
@@ -392,12 +392,14 @@ def _actions_in_window(
     results = []
 
     for entry in history:
-        ts = _parse_timestamp(entry.get("executed_at", ""))
+        # Log records store timestamp under "timestamp", action under "decision.action".
+        ts = _parse_timestamp(entry.get("timestamp", ""))
         if ts is None:
             continue
         if ts < cutoff:
             continue
-        if action_type and entry.get("action") != action_type:
+        entry_action = entry.get("decision", {}).get("action", "")
+        if action_type and entry_action != action_type:
             continue
         results.append(entry)
 
@@ -412,7 +414,7 @@ def _actions_today(
     """Filter history to actions from today (UTC).
 
     Args:
-        history: List of action dicts with "executed_at" timestamps.
+        history: List of decision log records with "timestamp" and nested "decision" keys.
         now: Current time (timezone-aware).
         action_type: If set, only include actions of this type.
 
@@ -423,12 +425,14 @@ def _actions_today(
     results = []
 
     for entry in history:
-        ts = _parse_timestamp(entry.get("executed_at", ""))
+        # Log records store timestamp under "timestamp", action under "decision.action".
+        ts = _parse_timestamp(entry.get("timestamp", ""))
         if ts is None:
             continue
         if ts < today_start:
             continue
-        if action_type and entry.get("action") != action_type:
+        entry_action = entry.get("decision", {}).get("action", "")
+        if action_type and entry_action != action_type:
             continue
         results.append(entry)
 
