@@ -253,7 +253,11 @@ def build_user_prompt(
                     "type": "text",
                     "text": (
                         "A photo of the plant is attached above. "
-                        "Examine it for visual signs of stress, pests, disease, "
+                        "Note: the photo was taken with the grow light temporarily "
+                        "switched on for illumination — the grow light's actual "
+                        "current state is shown in 'Current Actuator States' above, "
+                        "not inferred from the photo brightness. "
+                        "Examine the photo for visual signs of stress, pests, disease, "
                         "wilting, or discoloration and factor your observations "
                         "into the decision."
                     ),
@@ -628,17 +632,21 @@ def _format_history(history: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for i, entry in enumerate(history, start=1):
         timestamp = entry.get("timestamp", "?")
-        action = entry.get("action", "?")
-        reason = entry.get("reason", "")
-        params = entry.get("params", {})
-        urgency = entry.get("urgency", "normal")
+        # Decision data is nested under the "decision" key in log records.
+        decision = entry.get("decision", {})
+        action = decision.get("action", "?")
+        reason = decision.get("reason", "")
+        params = decision.get("params", {})
+        urgency = decision.get("urgency", "normal")
+        executed = entry.get("executed", True)
 
         param_str = ""
         if params:
             param_str = " | " + ", ".join(f"{k}={v}" for k, v in params.items())
 
+        exec_str = "" if executed else " [not executed]"
         lines.append(
-            f"{i}. [{timestamp}] {action}{param_str} (urgency: {urgency}) - {reason}"
+            f"{i}. [{timestamp}] {action}{param_str} (urgency: {urgency}){exec_str} - {reason}"
         )
 
     return "\n".join(lines)
