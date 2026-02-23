@@ -38,6 +38,7 @@ from src.plant_agent import (
 )
 from src.plant_knowledge import ensure_plant_knowledge
 from src.sensor_reader import SensorData, SensorReadError, read_sensors, read_sensors_mock
+from src.weather import fetch_weather
 
 logger = logging.getLogger(__name__)
 
@@ -907,6 +908,7 @@ async def chat_message_handler(
     )
 
     # Get AI response
+    weather_data = fetch_weather()
     try:
         response = get_chat_response(
             user_message=user_message,
@@ -917,6 +919,7 @@ async def chat_message_handler(
             actuator_state=actuator_state,
             plant_log=plant_log,
             hardware_profile=hardware_profile,
+            weather_data=weather_data,
         )
     except Exception as exc:
         logger.exception("Chat AI call failed")

@@ -228,6 +228,7 @@ def get_plant_decision(
     actuator_state: dict[str, str] | None = None,
     plant_log: list[dict[str, Any]] | None = None,
     hardware_profile: dict[str, Any] | None = None,
+    weather_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Call Claude to get a plant care decision based on current conditions.
 
@@ -264,6 +265,7 @@ def get_plant_decision(
         photo_path=photo_path,
         actuator_state=actuator_state,
         plant_log=plant_log,
+        weather_data=weather_data,
     )
 
     logger.info(
@@ -354,6 +356,7 @@ def get_chat_response(
     actuator_state: dict[str, str] | None = None,
     plant_log: list[dict[str, Any]] | None = None,
     hardware_profile: dict[str, Any] | None = None,
+    weather_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Call Claude to respond to a user's natural language message.
 
@@ -391,6 +394,7 @@ def get_chat_response(
         current_time=current_time,
         actuator_state=actuator_state,
         plant_log=plant_log,
+        weather_data=weather_data,
     )
 
     logger.info("Requesting chat response from %s", model)
