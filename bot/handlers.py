@@ -237,7 +237,7 @@ async def help_command(
         "  /water [sec]     - Water (default 5s, max 30s)\n"
         "  /light on|off    - Light control\n"
         "  /heater on|off   - Heater control\n"
-        "  /circulation [s] - Circulation fan (default 60s)\n\n"
+        "  /circulation [s] - Circulation fan (default 60s, max 3600s)\n\n"
         "Configuration:\n"
         "  /setplant <name> - Set plant species\n"
         "  /mode dry-run|live - Switch execution mode\n\n"
@@ -401,9 +401,9 @@ async def circulation_command(
             )
             return
 
-    if duration < 1 or duration > 300:
+    if duration < 1 or duration > 3600:
         await update.message.reply_text(
-            "Duration must be between 1 and 300 seconds."
+            "Duration must be between 1 and 3600 seconds."
         )
         return
 
