@@ -17,8 +17,7 @@ light:
   schedule_off: "24:00"       # latest light-off time
 
 circulation:
-  max_duration_sec: 300       # max single circulation fan runtime
-  min_interval_min: 10        # minimum minutes between activations
+  max_duration_sec: 3600      # max single circulation fan runtime (60 min)
 
 # Global safety
 emergency_stop_file: /tmp/plant-agent-stop   # touch this file to halt all actions
