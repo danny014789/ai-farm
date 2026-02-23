@@ -63,8 +63,7 @@ def _load_limits() -> dict[str, Any]:
                 "schedule_off": "24:00",
             },
             "circulation": {
-                "max_duration_sec": 300,
-                "min_interval_min": 30,
+                "max_duration_sec": 3600,
             },
             "emergency_stop_file": "/tmp/plant-agent-stop",
             "max_actions_per_hour": 10,
