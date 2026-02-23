@@ -40,6 +40,7 @@ from src.logger import (
 from src.plant_knowledge import ensure_plant_knowledge
 from src.safety import validate_action
 from src.sensor_reader import SensorData, SensorReadError, read_sensors, read_sensors_mock
+from src.weather import fetch_weather
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,10 @@ def run_check(
     summary["sensor_data"] = sensor_data.to_dict()
     log_sensor_reading(sensor_data, data_dir)
 
+    # --- 1b. Fetch outdoor weather (optional, non-blocking) ---
+    weather_data = fetch_weather()
+    summary["weather_data"] = weather_data
+
     # --- 2. Optionally capture photo (with light) ---
     photo_path = None
     if include_photo and not use_mock:
@@ -170,6 +175,7 @@ def run_check(
             actuator_state=actuator_state,
             plant_log=plant_log,
             hardware_profile=hardware_profile,
+            weather_data=weather_data,
         )
         actions_summary = ", ".join(
             a.get("action", "?") for a in decision.get("actions", [])

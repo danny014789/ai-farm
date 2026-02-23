@@ -195,6 +195,7 @@ def build_user_prompt(
     photo_path: str | None = None,
     actuator_state: dict[str, str] | None = None,
     plant_log: list[dict[str, Any]] | None = None,
+    weather_data: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Build the user message content blocks for a decision request.
 
@@ -233,9 +234,14 @@ def build_user_prompt(
             f"## Your Previous Observations\n{_format_plant_log(plant_log)}\n\n"
         )
 
+    weather_section = ""
+    if weather_data:
+        weather_section = f"## Outdoor Weather\n{_format_weather(weather_data)}\n\n"
+
     text_block = (
         f"## Current Time\n{current_time}\n\n"
         f"## Current Sensor Readings\n{sensor_text}\n\n"
+        f"{weather_section}"
         f"{actuator_section}"
         f"{plant_log_section}"
         f"## Recent Decision History (last {len(history)} decisions)\n{history_text}\n\n"
@@ -481,6 +487,7 @@ def build_chat_user_prompt(
     current_time: str,
     actuator_state: dict[str, str] | None = None,
     plant_log: list[dict[str, Any]] | None = None,
+    weather_data: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Build the user message for a chat interaction.
 
@@ -502,6 +509,9 @@ def build_chat_user_prompt(
         f"## Current Time\n{current_time}",
         f"## Current Sensor Readings\n{sensor_text}",
     ]
+
+    if weather_data:
+        context_parts.append(f"## Outdoor Weather\n{_format_weather(weather_data)}")
 
     if actuator_state:
         actuator_text = _format_actuator_state(actuator_state)
@@ -659,6 +669,22 @@ def _format_history(history: list[dict[str, Any]]) -> str:
             f"{i}. [{timestamp}] {action}{param_str} (urgency: {urgency}){exec_str} - {reason}"
         )
 
+    return "\n".join(lines)
+
+
+def _format_weather(weather: dict[str, Any]) -> str:
+    """Format outdoor weather data into a readable text block."""
+    lines = [
+        f"- Condition: {weather.get('condition', 'unknown')}",
+        f"- Temperature: {weather.get('temperature_c')}°C"
+        + (
+            f" (feels like {weather.get('apparent_temperature_c')}°C)"
+            if weather.get("apparent_temperature_c") is not None
+            else ""
+        ),
+        f"- Humidity: {weather.get('humidity_pct')}%",
+        f"- Wind speed: {weather.get('wind_speed_kmh')} km/h",
+    ]
     return "\n".join(lines)
 
 
