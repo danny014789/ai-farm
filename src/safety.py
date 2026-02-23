@@ -321,8 +321,7 @@ def _validate_circulation(
 ) -> ValidationResult:
     """Validate and cap circulation fan action."""
     circ_limits = limits.get("circulation", {})
-    max_duration = circ_limits.get("max_duration_sec", 300)
-    min_interval = circ_limits.get("min_interval_min", 30)
+    max_duration = circ_limits.get("max_duration_sec", 3600)
 
     # Cap duration
     requested = action.get("duration_sec", 0)
@@ -339,19 +338,6 @@ def _validate_circulation(
         )
         action["duration_sec"] = max_duration
         action["_capped"] = True
-
-    # Min interval check
-    recent_circ = _actions_in_window(
-        history, now, minutes=min_interval, action_type="circulation"
-    )
-    if recent_circ:
-        last = recent_circ[-1].get("timestamp", "unknown")
-        return ValidationResult(
-            valid=False,
-            reason=f"Circulation rate limit: must wait {min_interval} min. "
-                   f"Last activation at {last}.",
-            capped_action=action,
-        )
 
     return ValidationResult(valid=True, reason="OK", capped_action=action)
 
