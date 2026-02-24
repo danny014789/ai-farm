@@ -54,6 +54,9 @@ agent (e.g., a chat interface to your plant), upgrade to Agent SDK then.
 ```python
 # Pseudocode for plant_agent.py
 
+# 0. OUTDOOR WEATHER (optional)
+weather = fetch_outdoor_weather()  # Open-Meteo API, no key required; skipped if WEATHER_LAT/LON unset
+
 # 1. GATHER DATA
 sensor_data = run("farmctl.py status --json")
 photo_path  = run("farmctl.py camera-snap --out /tmp/plant.jpg --json")
@@ -64,7 +67,7 @@ plant_profile = load_plant_profile()  # species, growth stage, preferences
 
 # 3. ASK CLAUDE
 response = claude.messages.create(
-    model="claude-sonnet-4-20250514",  # good balance of cost/quality
+    model="claude-sonnet-4-6",  # good balance of cost/quality
     system=SYSTEM_PROMPT,  # plant care expert, safety rules
     messages=[
         {"role": "user", "content": [
@@ -113,21 +116,21 @@ Layer 1: HARDCODED LIMITS (in Python, not AI-controllable)
   - Max water duration: 30 seconds per cycle
   - Max heater: off if temp > 30C
   - Max light: 18 hours per day
-  - Min interval between same action: 30 min (water: 1 hour)
-  - Circulation fan: max 5 min per cycle
+  - Min interval between waterings: 60 min
+  - Circulation fan: max 3600 seconds (60 min) per cycle, no rate limit between activations
 
 Layer 2: ALLOWLIST (AI can only choose from predefined actions)
   - water(sec)     -> capped at 30
   - light(on|off)  -> checked against daily schedule
   - heater(on|off) -> checked against temp limits
-  - circulation(sec) -> capped at 300
+  - circulation(sec) -> capped at 3600
   - "do_nothing"   -> always allowed
   - "notify_human" -> always allowed
 
 Layer 3: RATE LIMITING
-  - Max API calls per hour: 4 (every 15 min)
-  - Max actions per hour: configurable per type
-  - Daily cost cap: $X (track token usage)
+  - Max API calls per hour: configurable
+  - Max actions per hour: 10 (global cap)
+  - Daily cost cap: $1.00 (track token usage)
 
 Layer 4: HUMAN OVERRIDE
   - Emergency stop: touch /tmp/plant-agent-stop -> agent exits immediately
@@ -252,28 +255,33 @@ With vision (sending plant photo):
 plant-ops-ai/
   ARCHITECTURE.md          # this file
   README.md                # setup instructions
-  requirements.txt         # anthropic, python-dotenv
+  requirements.txt         # anthropic, python-telegram-bot, python-dotenv, pyyaml, apscheduler
   .env.example             # ANTHROPIC_API_KEY=sk-...
   config/
     plant_profile.yaml     # species, growth stage, care preferences
     safety_limits.yaml     # hardcoded max values for actions
-    schedule.yaml          # light schedule, watering windows
+    hardware_profile.yaml  # physical setup (pump flow rate, pot size, sensor calibration)
   src/
-    plant_agent.py         # main entry point (cron runs this)
+    plant_agent.py         # main entry point / orchestrator
     claude_client.py       # Anthropic API wrapper
     sensor_reader.py       # calls farmctl.py status, parses output
     action_executor.py     # calls farmctl.py commands with safety checks
+    actuator_state.py      # tracks actuator on/off state
     safety.py              # hardcoded safety limits + validation
-    notifier.py            # email/webhook notifications
-    logger.py              # decision + action logging
+    weather.py             # outdoor weather via Open-Meteo (no API key needed)
+    logger.py              # decision + action logging (JSONL)
     prompts.py             # system prompt + user prompt templates
+    plant_knowledge.py     # one-time plant research + caching
+    config_loader.py       # YAML config loading
+  bot/
+    telegram_bot.py        # bot entry point, scheduled checks
+    handlers.py            # Telegram command + chat handlers
+    keyboards.py           # inline keyboard builders
   data/
     decisions.jsonl        # append-only decision log
     sensor_history.jsonl   # sensor readings over time
+    plant_knowledge.md     # cached plant care research
   tests/
-    mock_sensor_data.json  # fake sensor readings for local testing
-    test_safety.py         # safety limit tests
-    test_agent.py          # agent decision tests with mocked API
 ```
 
 ## Implementation Order

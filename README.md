@@ -11,6 +11,7 @@ Runs on a Raspberry Pi connected to an Arduino sensor/relay board and a Pi camer
 - **Natural language chat** -- talk to your plant agent in plain English via Telegram ("how's my plant?", "water it a bit", "what happened overnight?")
 - **AI operational memory** -- the agent logs observations (watering outcomes, growth milestones, patterns) and reads them back on future checks, so it learns from its own experience
 - **Knowledge research** -- when you set a plant species, Claude researches optimal growing conditions and caches the results; the agent can update this knowledge over time as it learns
+- **Outdoor weather context** -- fetches current outdoor temperature, humidity, and wind speed from Open-Meteo (no API key needed) so Claude can compare indoor readings against real outside conditions
 - **4-layer safety system** -- hardcoded limits, action allowlist, rate limiting, and human emergency stop ensure the AI never has unchecked hardware control
 - **Multi-user Telegram** -- invite friends by adding their chat IDs to `.env`
 - **Photo with lighting** -- automatically turns on the grow light before taking photos for better image quality
@@ -52,11 +53,13 @@ plant-ops-ai/
 │   ├── action_executor.py      # farmctl.py action execution
 │   ├── actuator_state.py       # Track actuator on/off state
 │   ├── safety.py               # Safety validation layer
+│   ├── weather.py              # Outdoor weather via Open-Meteo API
 │   ├── config_loader.py        # YAML config loading
 │   └── logger.py               # JSONL structured logging
 ├── config/
 │   ├── safety_limits.yaml      # Hardcoded safety limits
-│   └── plant_profile.yaml      # Current plant configuration
+│   ├── plant_profile.yaml      # Current plant configuration
+│   └── hardware_profile.yaml   # Physical setup (pump flow rate, pot size, etc.)
 ├── farmctl/
 │   └── farmctl.py              # Hardware CLI (serial + camera control)
 ├── deploy/
@@ -159,7 +162,7 @@ The AI reads current sensors, checks its memory of past observations, and respon
 | `/water [sec]` | Manual watering (default 5s, max 30s) |
 | `/light on\|off` | Toggle grow light |
 | `/heater on\|off` | Toggle heater |
-| `/circulation [sec]` | Run circulation fan (default 60s, max 300s) |
+| `/circulation [sec]` | Run circulation fan (default 60s, max 3600s) |
 | `/setplant <name>` | Set plant species and trigger AI research |
 | `/profile` | View plant profile and ideal conditions |
 | `/history [n]` | Show last N decisions (default 5) |
@@ -200,12 +203,12 @@ The AI never has unchecked control over hardware. Safety is enforced in Python c
 - Max watering: 30 seconds per cycle, minimum 60 minutes between waterings, 6 per day
 - Heater off above 30C, on below 10C (failsafe), max 120 minutes continuous
 - Light: max 18 hours per day within configured schedule
-- Circulation fan: max 300 seconds, minimum 30 minutes between activations
+- Circulation fan: max 3600 seconds (60 min) per activation
 - Global: max 10 actions per hour, daily API cost cap
 
 **Layer 2 -- Action allowlist**: Claude can only choose from predefined actions (`water`, `light_on`, `light_off`, `heater_on`, `heater_off`, `circulation`, `do_nothing`, `notify_human`). Any other output is rejected.
 
-**Layer 3 -- Rate limiting**: Per-action-type rate limits and a global actions-per-hour cap prevent runaway behavior.
+**Layer 3 -- Rate limiting**: Per-action-type rate limits and a global actions-per-hour cap prevent runaway behavior. (The circulation fan has no minimum interval between activations.)
 
 **Layer 4 -- Human override**: Create the emergency stop file to immediately halt all automated actions:
 ```bash
@@ -227,6 +230,8 @@ rm /tmp/plant-agent-stop       # Resume
 | `CLAUDE_MODEL` | No | `claude-sonnet-4-6` | Claude model to use |
 | `DATA_DIR` | No | `./data` | Directory for logs and cached data |
 | `AGENT_MODE` | No | `dry-run` | `dry-run` (log only) or `live` (execute actions) |
+| `WEATHER_LAT` | No | -- | Latitude for outdoor weather (Open-Meteo, no API key needed) |
+| `WEATHER_LON` | No | -- | Longitude for outdoor weather (pair with `WEATHER_LAT`) |
 
 ### Plant Profile (`config/plant_profile.yaml`)
 
