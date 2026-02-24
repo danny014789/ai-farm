@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(target temperature to 20-26C\" and the chat AI will update:*)",
+      "Bash(cd /c/Users/ASUS/OneDrive/Documents/GitHub/ai-farm && python -c \"from src.weather import fetch_weather; print\\('weather import OK'\\)\" 2>&1)",
+      "Bash(tail:*)",
+      "Bash(cd \"C:/Users/ASUS/OneDrive/Documents/GitHub/ai-farm\" && python3 -c \"import requests; print\\('requests OK'\\)\" 2>&1)",
+      "Bash(which python3:*)",
+      "Bash(PYTHON=\"/c/Users/ASUS/anaconda3/python.exe\" && \"$PYTHON\" -c \"import requests; print\\('requests OK'\\)\" 2>&1 && \"$PYTHON\" -c \"from src.weather import fetch_weather; print\\('weather import OK'\\)\" 2>&1)",
+      "Bash(PYTHON=\"/c/Users/ASUS/anaconda3/python.exe\" && cd \"C:/Users/ASUS/OneDrive/Documents/GitHub/ai-farm\" && \"$PYTHON\" -c \"\nfrom src.prompts import build_user_prompt, build_chat_user_prompt\nprint\\('prompts import OK'\\)\nfrom src.claude_client import get_plant_decision, get_chat_response\nprint\\('claude_client import OK'\\)\nfrom src.plant_agent import run_check\nprint\\('plant_agent import OK'\\)\nfrom bot.handlers import fetch_weather\nprint\\('handlers import OK'\\)\n\" 2>&1)",
+      "Bash(PYTHON=\"/c/Users/ASUS/anaconda3/python.exe\" && cd \"C:/Users/ASUS/OneDrive/Documents/GitHub/ai-farm\" && \"$PYTHON\" -c \"\nfrom src.prompts import build_user_prompt, _format_weather\n# Test _format_weather helper\nweather = {'temperature_c': 22.5, 'apparent_temperature_c': 21.0, 'humidity_pct': 65, 'wind_speed_kmh': 12.3, 'condition': 'partly cloudy'}\nprint\\(_format_weather\\(weather\\)\\)\n\n# Test that weather_data flows into build_user_prompt\nblocks = build_user_prompt\\(\n    sensor_data={'temperature_c': 25, 'humidity_pct': 60, 'co2_ppm': 800, 'light_level': 'medium', 'soil_moisture_pct': 50},\n    history=[],\n    current_time='2026-02-23 12:00:00',\n    weather_data=weather,\n\\)\ntext = blocks[0]['text']\nprint\\('Outdoor Weather section present:', '## Outdoor Weather' in text\\)\nprint\\('Condition in text:', 'partly cloudy' in text\\)\nprint\\(\\)\nprint\\(text[:600]\\)\n\" 2>&1)",
+      "Bash(PYTHON=\"/c/Users/ASUS/anaconda3/python.exe\" && cd \"C:/Users/ASUS/OneDrive/Documents/GitHub/ai-farm\" && \"$PYTHON\" -c \"\nimport os\n# Ensure no lat/lon set\nos.environ.pop\\('WEATHER_LAT', None\\)\nos.environ.pop\\('WEATHER_LON', None\\)\nfrom src.weather import fetch_weather\nresult = fetch_weather\\(\\)\nprint\\('Returns None when unconfigured:', result is None\\)\n\" 2>&1)",
+      "Bash(cd:*)"
+    ]
+  }
+}
