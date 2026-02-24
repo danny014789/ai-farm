@@ -57,6 +57,8 @@ Fill in each variable:
 | `CLAUDE_MODEL` | Which Claude model to use (Sonnet recommended) | `claude-sonnet-4-6` |
 | `DATA_DIR` | Where to store logs and cached data | `/home/pi/plant-ops-ai/data` |
 | `AGENT_MODE` | Start with `dry-run`, switch to `live` when ready | `dry-run` |
+| `WEATHER_LAT` | (Optional) Latitude for outdoor weather via Open-Meteo — no API key needed. When set, Claude sees current outdoor temp/humidity alongside your indoor sensor data. Find your coordinates at [latlong.net](https://www.latlong.net/) | `24.1477` |
+| `WEATHER_LON` | (Optional) Longitude paired with `WEATHER_LAT` | `120.6736` |
 
 Save and exit nano (`Ctrl+O`, `Enter`, `Ctrl+X`).
 
