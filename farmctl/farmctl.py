@@ -47,7 +47,11 @@ class SerialClient:
     def send(self, command: str, read_s: float = 1.2) -> str:
         if serial is None:
             raise RuntimeError("pyserial not installed. Run: python3 -m pip install pyserial")
-        with serial.Serial(self.port, self.baud, timeout=self.timeout_s) as ser:
+        with serial.Serial(
+            self.port, self.baud, timeout=self.timeout_s,
+            dsrdtr=False, rtscts=False,  # prevent DTR/RTS toggling that resets the Arduino
+        ) as ser:
+            ser.dtr = False  # keep DTR low so Arduino does not reset on port open
             ser.reset_input_buffer()
             ser.reset_output_buffer()
             ser.write((command.strip() + "\n").encode("utf-8"))
