@@ -106,10 +106,6 @@ def run_check(
         hardware_profile = load_hardware_profile()
     except FileNotFoundError:
         hardware_profile = {}
-    sensors_cfg = hardware_profile.get("sensors", {})
-    soil_cal = None
-    if sensors_cfg.get("soil_raw_dry") and sensors_cfg.get("soil_raw_wet"):
-        soil_cal = (int(sensors_cfg["soil_raw_dry"]), int(sensors_cfg["soil_raw_wet"]))
 
     # --- 1. Read sensors ---
     try:
@@ -117,7 +113,7 @@ def run_check(
             sensor_data = read_sensors_mock()
             logger.info("Using mock sensor data")
         else:
-            sensor_data = read_sensors(farmctl_path, soil_cal=soil_cal)
+            sensor_data = read_sensors(farmctl_path)
             logger.info("Sensor read OK: temp=%.1fC soil=%.0f%%",
                         sensor_data.temperature_c, sensor_data.soil_moisture_pct)
     except SensorReadError as e:

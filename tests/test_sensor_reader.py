@@ -149,27 +149,29 @@ class TestFarmctlFieldMapping:
         result = _parse_sensor_json(data)
         assert result.light_level == 512
 
-    def test_soil_raw_converted_to_percentage(self):
-        """soil_raw=1023 (dry) should map to ~0%, soil_raw=300 (wet) to ~100%."""
+    def test_soil_raw_dry_end_exponential(self):
+        """ADC 1023 (fully dry) uses the exponential formula — does not clamp to 0."""
+        # moisture = exp(-0.00258653 * 1023 + 4.91733458) = exp(2.27111) ≈ 9.7 %
         data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
                 "light_raw": 500, "soil_raw": 1023}
         result = _parse_sensor_json(data)
-        assert result.soil_moisture_pct == 0.0
+        assert result.soil_moisture_pct == 9.7
 
-    def test_soil_raw_wet_converted(self):
-        """soil_raw=300 (wet) should map to 100%."""
+    def test_soil_raw_exponential_formula_mid_range(self):
+        """Mid-range ADC follows the exponential calibration formula."""
+        # moisture = exp(-0.00258653 * 500 + 4.91733458) = exp(3.62406) ≈ 37.5 %
+        data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
+                "light_raw": 500, "soil_raw": 500}
+        result = _parse_sensor_json(data)
+        assert result.soil_moisture_pct == 37.5
+
+    def test_soil_raw_wet_end_exponential(self):
+        """Low ADC (wet soil) returns a high moisture % via the exponential formula."""
+        # moisture = exp(-0.00258653 * 300 + 4.91733458) = exp(4.14137) ≈ 62.9 %
         data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
                 "light_raw": 500, "soil_raw": 300}
         result = _parse_sensor_json(data)
-        assert result.soil_moisture_pct == 100.0
-
-    def test_soil_raw_midpoint(self):
-        """soil_raw in the middle should give roughly 50%."""
-        midpoint = (1023 + 300) / 2  # 661.5
-        data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
-                "light_raw": 500, "soil_raw": midpoint}
-        result = _parse_sensor_json(data)
-        assert 45.0 <= result.soil_moisture_pct <= 55.0
+        assert result.soil_moisture_pct == 62.9
 
     def test_soil_moisture_pct_passes_through(self):
         """If soil_moisture_pct is already 0-100, it should not be converted."""

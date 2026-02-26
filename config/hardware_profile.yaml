@@ -26,5 +26,6 @@ circulation_fan:
   type: "USB fan"
 
 sensors:
-  soil_raw_dry: 1023            # ADC reading in open air (fully dry)
-  soil_raw_wet: 300             # ADC reading submerged in water (fully wet)
+  # Soil moisture is now calibrated via a piecewise linear curve
+  # (soil_moisture_calibration_curve.xlsx). The old soil_raw_dry / soil_raw_wet
+  # two-point approach is no longer used.
