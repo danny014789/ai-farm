@@ -903,9 +903,7 @@ async def chat_message_handler(
     history = load_recent_decisions(10, data_dir)
     plant_log = load_recent_plant_log(20, data_dir)
     actuator_state = reconcile_actuator_state(sensor_data.to_dict(), data_dir)
-    plant_knowledge = ensure_plant_knowledge(
-        profile, _bot_data(context, "anthropic_api_key") or ""
-    )
+    plant_knowledge = ensure_plant_knowledge(profile, data_dir)
 
     # Get AI response
     weather_data = fetch_weather()
