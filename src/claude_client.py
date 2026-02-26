@@ -229,6 +229,7 @@ def get_plant_decision(
     plant_log: list[dict[str, Any]] | None = None,
     hardware_profile: dict[str, Any] | None = None,
     weather_data: dict[str, Any] | None = None,
+    light_schedule: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Call Claude to get a plant care decision based on current conditions.
 
@@ -257,7 +258,12 @@ def get_plant_decision(
 
     current_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
-    system_prompt = build_system_prompt(plant_profile, plant_knowledge, hardware_profile)
+    light_hours = plant_profile.get("ideal_conditions", {}).get("light_hours", 14)
+    schedule_on = (light_schedule or {}).get("schedule_on", "06:00")
+
+    system_prompt = build_system_prompt(
+        plant_profile, plant_knowledge, hardware_profile, light_schedule=light_schedule
+    )
     user_content = build_user_prompt(
         sensor_data=sensor_data,
         history=history,
@@ -266,6 +272,8 @@ def get_plant_decision(
         actuator_state=actuator_state,
         plant_log=plant_log,
         weather_data=weather_data,
+        light_hours=light_hours,
+        schedule_on=schedule_on,
     )
 
     logger.info(

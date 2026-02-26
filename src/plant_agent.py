@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from src.action_executor import ActionExecutor
 from src.actuator_state import reconcile_actuator_state, update_after_action
 from src.claude_client import get_plant_decision
-from src.config_loader import load_hardware_profile, load_plant_profile, save_hardware_profile
+from src.config_loader import load_hardware_profile, load_plant_profile, load_safety_limits, save_hardware_profile
 from src.logger import (
     load_recent_decisions,
     load_recent_plant_log,
@@ -101,11 +101,17 @@ def run_check(
         "mode": "dry-run" if dry_run else "live",
     }
 
-    # --- 0. Load hardware profile ---
+    # --- 0. Load hardware profile and safety limits ---
     try:
         hardware_profile = load_hardware_profile()
     except FileNotFoundError:
         hardware_profile = {}
+
+    try:
+        safety_limits = load_safety_limits()
+        light_schedule = safety_limits.get("light", {})
+    except FileNotFoundError:
+        light_schedule = {}
 
     # --- 1. Read sensors ---
     try:
@@ -172,6 +178,7 @@ def run_check(
             plant_log=plant_log,
             hardware_profile=hardware_profile,
             weather_data=weather_data,
+            light_schedule=light_schedule,
         )
         actions_summary = ", ".join(
             a.get("action", "?") for a in decision.get("actions", [])

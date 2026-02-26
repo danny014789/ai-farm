@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,7 @@ def build_system_prompt(
     plant_profile: dict[str, Any],
     plant_knowledge: str,
     hardware_profile: dict[str, Any] | None = None,
+    light_schedule: dict[str, Any] | None = None,
 ) -> str:
     """Build the system prompt that defines Claude's role and constraints.
 
@@ -85,6 +87,10 @@ def build_system_prompt(
     notes = plant.get("notes") or ""
 
     variety_label = f" ({variety})" if variety else ""
+
+    # Light schedule settings (from safety_limits.yaml)
+    _schedule_on = (light_schedule or {}).get("schedule_on", "06:00")
+    _light_hours = ideal.get("light_hours", 14)
 
     # Format ideal conditions as a readable block
     ideal_block = _format_ideal_conditions(ideal)
@@ -146,7 +152,11 @@ You may recommend one or more actions per evaluation. Choose from:
 - Water: duration_sec must be between 1 and 30. Minimum 60 minutes between waterings. Do NOT water if the water tank level is LOW — notify the human to refill instead.
 - Circulation: duration_sec must be between 10 and 3600 (max 60 minutes). No rate limit — you may run it as often as needed.
 - Heater: Never turn on if temperature is already above {ideal.get("temp_max_c", 28)}C. Never leave on if above {ideal.get("temp_max_c", 28)}C. If heater_lockout is active, the firmware has disabled the heater for safety — do not attempt to turn it on.
-- Light: Respect the plant's light schedule. Do NOT turn on lights between midnight and 5am unless the plant is severely light-deprived. Maximum {ideal.get("light_hours", 14)} hours per day.
+- Light (follow all rules precisely):
+  * TURN ON: Issue light_on at the FIRST scheduled check AFTER {_schedule_on}. The safety system automatically blocks light_on before {_schedule_on}, so a [not executed] light_on in history simply means the check ran TOO EARLY — the light was NOT turned on. Do not assume the cycle has started.
+  * TURN OFF: Issue light_off exactly {_light_hours} hours after the light ACTUALLY turned on. Always use the computed "Expected light_off time" shown in the "## Light Cycle Status" section — it is calculated from the last EXECUTED (not rejected) light_on.
+  * VERIFY STATE: ALWAYS cross-check the hardware relay state ("Grow light: on/off" in "Current Actuator States") with the light_level sensor reading. Only a successfully EXECUTED light_on starts a light cycle. A [not executed] history entry does NOT mean the light is currently on.
+  * Do NOT turn on lights between midnight and {_schedule_on} unless the plant is critically light-deprived.
 - When in doubt, choose "do_nothing" and set "notify_human" to true.
 
 ## Decision Guidelines
@@ -196,6 +206,8 @@ def build_user_prompt(
     actuator_state: dict[str, str] | None = None,
     plant_log: list[dict[str, Any]] | None = None,
     weather_data: dict[str, Any] | None = None,
+    light_hours: int = 14,
+    schedule_on: str = "06:00",
 ) -> list[dict[str, Any]]:
     """Build the user message content blocks for a decision request.
 
@@ -228,6 +240,11 @@ def build_user_prompt(
     if actuator_text:
         actuator_section = f"## Current Actuator States\n{actuator_text}\n\n"
 
+    light_cycle_text = _compute_light_cycle_section(
+        history, actuator_state, sensor_data, light_hours, schedule_on
+    )
+    light_cycle_section = f"## Light Cycle Status\n{light_cycle_text}\n\n"
+
     plant_log_section = ""
     if plant_log:
         plant_log_section = (
@@ -243,6 +260,7 @@ def build_user_prompt(
         f"## Current Sensor Readings\n{sensor_text}\n\n"
         f"{weather_section}"
         f"{actuator_section}"
+        f"{light_cycle_section}"
         f"{plant_log_section}"
         f"## Recent Decision History (last {len(history)} decisions)\n{history_text}\n\n"
         "Analyze the current plant status and return your JSON decision."
@@ -540,6 +558,130 @@ def build_chat_user_prompt(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _compute_light_cycle_section(
+    history: list[dict[str, Any]],
+    actuator_state: dict[str, str] | None,
+    sensor_data: dict[str, Any],
+    light_hours: int,
+    schedule_on: str,
+) -> str:
+    """Return pre-digested light cycle facts for the user prompt.
+
+    Provides explicit, computed information so the AI does not need to infer
+    light state from history entries (which can be confusing when marked
+    [not executed]).  Hardware relay state is always the authoritative source.
+
+    Args:
+        history: Recent decision dicts, most-recent-first.
+        actuator_state: Current actuator states (may include hardware relay).
+        sensor_data: Current sensor readings dict.
+        light_hours: Configured light hours per cycle (from plant profile).
+        schedule_on: Earliest light-on time string, e.g. "06:00".
+
+    Returns:
+        Formatted string suitable for inclusion in the user prompt.
+    """
+    lines: list[str] = []
+
+    # Hardware relay is authoritative; light_level sensor is a cross-check
+    hw_light = (actuator_state or {}).get("light", "unknown")
+    light_sensor = sensor_data.get("light_level", "N/A")
+    lines.append(f"- Hardware relay state (Arduino): {hw_light}")
+    lines.append(f"- Light sensor reading: {light_sensor}")
+
+    # Scan history (most-recent-first) for last EXECUTED light_on / light_off.
+    # [not executed] entries are skipped — they mean the safety layer blocked it.
+    last_on_ts: str | None = None
+    last_off_ts: str | None = None
+    for entry in history:
+        act = entry.get("decision", {}).get("action", "")
+        executed = entry.get("executed", True)
+        ts = entry.get("timestamp", "")
+        if act == "light_on" and executed and last_on_ts is None:
+            last_on_ts = ts
+        if act == "light_off" and executed and last_off_ts is None:
+            last_off_ts = ts
+        if last_on_ts is not None and last_off_ts is not None:
+            break
+
+    # Parse last on-time and compute expected off-time
+    now = datetime.now()
+    now_hm = now.strftime("%H:%M")
+    last_on_local: datetime | None = None
+    expected_off_local: datetime | None = None
+
+    if last_on_ts:
+        try:
+            dt = datetime.fromisoformat(last_on_ts)
+            last_on_local = dt.astimezone().replace(tzinfo=None) if dt.tzinfo else dt
+            expected_off_local = last_on_local + timedelta(hours=light_hours)
+        except (ValueError, TypeError):
+            pass
+
+    if last_on_local and expected_off_local:
+        lines.append(
+            f"- Last EXECUTED light_on: {last_on_local.strftime('%Y-%m-%d %H:%M')} (local)"
+        )
+        lines.append(
+            f"- Expected light_off time: {expected_off_local.strftime('%H:%M')} "
+            f"(= on-time + {light_hours}h)"
+        )
+
+    # Guidance based on hardware state
+    if hw_light == "on":
+        if expected_off_local:
+            if now >= expected_off_local:
+                overdue_min = int((now - expected_off_local).total_seconds() / 60)
+                lines.append(
+                    f"⚠️ TURN OFF NOW: light has been on for the full {light_hours}h cycle "
+                    f"(overdue by {overdue_min} min). Issue light_off immediately."
+                )
+            else:
+                remaining_min = int((expected_off_local - now).total_seconds() / 60)
+                lines.append(
+                    f"- Light is ON — {remaining_min} min remaining until off time "
+                    f"({expected_off_local.strftime('%H:%M')}). No action needed."
+                )
+        else:
+            lines.append(
+                "- Light is ON — start time not found in recent history. "
+                "Issue light_off if you estimate it has been on for more than "
+                f"{light_hours}h."
+            )
+    else:
+        # Determine if the daily cycle is already complete
+        cycle_complete = False
+        if last_on_local and last_off_ts:
+            try:
+                off_dt = datetime.fromisoformat(last_off_ts)
+                off_local = off_dt.astimezone().replace(tzinfo=None) if off_dt.tzinfo else off_dt
+                if off_local > last_on_local:
+                    cycle_complete = True
+                    lines.append(
+                        f"- Light cycle complete for today (on {last_on_local.strftime('%H:%M')}"
+                        f" → off {off_local.strftime('%H:%M')})."
+                    )
+            except (ValueError, TypeError):
+                pass
+
+        if not cycle_complete:
+            if now_hm >= schedule_on:
+                lines.append(
+                    f"⚡ TURN ON: light is OFF and it is past {schedule_on}. "
+                    "No completed light cycle found today. Issue light_on."
+                )
+            else:
+                lines.append(
+                    f"- Light is OFF. Schedule window opens at {schedule_on} "
+                    f"(current time: {now_hm}). Do not turn on yet."
+                )
+
+    lines.append(
+        f"- Configured: on after {schedule_on}, run for {light_hours}h per cycle"
+    )
+    return "\n".join(lines)
 
 
 def _format_hardware_profile(hw: dict[str, Any]) -> str:
