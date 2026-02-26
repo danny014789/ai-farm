@@ -903,7 +903,13 @@ async def chat_message_handler(
     history = load_recent_decisions(10, data_dir)
     plant_log = load_recent_plant_log(20, data_dir)
     actuator_state = reconcile_actuator_state(sensor_data.to_dict(), data_dir)
-    plant_knowledge = ensure_plant_knowledge(profile, data_dir)
+    try:
+        plant_knowledge = ensure_plant_knowledge(profile, data_dir)
+    except ValueError as exc:
+        await update.message.reply_text(
+            f"No plant configured yet.\nUse /setplant <name> to set a plant first.\n\n({exc})"
+        )
+        return
 
     # Get AI response
     weather_data = fetch_weather()
