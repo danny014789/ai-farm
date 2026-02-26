@@ -201,6 +201,8 @@ moisture_pct = exp(-0.00258653 × ADC + 4.91733458)
 
 When a reading falls outside the calibrated range, the system logs a warning. A value of **100%** in `/status` means the sensor ADC is very low (wet soil near or past saturation) — not necessarily exactly 100% moisture.
 
+The parser tracks which JSON field the soil value came from (`soil_raw` vs `soil_moisture_pct`) and always applies the ADC→% conversion for raw readings, even when the ADC happens to be ≤ 100 (very wet soil). Without this, a wet-soil ADC of e.g. 80 would have been returned directly as "80%" instead of being converted.
+
 The calibration curve and raw data live in `soil_moisture_calibration_curve.xlsx`. Add measurements at wetter soil conditions (ADC < 390) and refit to improve accuracy at the wet end.
 
 ## AI Memory System

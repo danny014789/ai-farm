@@ -280,25 +280,50 @@ Photo capture failed, continuing without photo
 - Look at logs for warnings: `sudo journalctl -u plant-ops-ai | grep -i job`
 - Verify the bot is not paused: check if `data/.paused` exists
 
-### Soil moisture reads 100% (or unexpectedly high)
+### Soil moisture reads 100% (or stuck at a wrong value)
 
-A soil moisture of **100%** in `/status` means the sensor's raw ADC value is very low (≤ ~121), which causes the calibration formula to return > 100% and clamp to 100%. This indicates the sensor is near or past saturation — the soil is very wet. It does **not** mean the reading is precisely 100%.
+Work through these checks in order:
 
-The calibration was measured over ADC 390–822 (≈18–56% moisture). ADC values below 390 (wetter soil) are extrapolated and can underestimate actual moisture by up to ~10 percentage points. Check the system log for a `WARNING` line:
+**1. Confirm the Pi is running the latest code** — this is the most common cause.
 
+```bash
+cd ~/plant-ops-ai
+git log --oneline -3
 ```
+
+The top commit should match the latest on GitHub. If it is behind, pull and restart:
+
+```bash
+git pull origin main
+sudo systemctl restart plant-ops-ai
+```
+
+**2. Confirm farmctl.py returns a valid soil reading:**
+
+```bash
+python3 ~/plant-ops-ai/farmctl/farmctl.py status --json
+```
+
+Look for `"soil_raw": <number>` in the output. If `"raw"` is empty (`"raw": ""`), the Arduino is not responding — check the USB connection and serial port (`ls /dev/ttyACM*`).
+
+**3. Confirm the calibration conversion works:**
+
+```bash
+cd ~/plant-ops-ai
+python3 -c "from src.sensor_reader import _soil_adc_to_pct; print(_soil_adc_to_pct(262))"
+```
+
+Should print approximately `69.4`. If it prints `100.0` or errors, the code is not up to date.
+
+**4. If all of the above look correct but /status still shows 100%:**
+
+A genuine 100% means the sensor ADC is ≤ ~121, which causes the calibration formula to return > 100% — clamped to 100%. This indicates the soil is near or past saturation at the moment the bot reads it (the sensor ADC can be lower when the bot polls than when you check manually). Check the system log for the warning:
+
+```bash
 sudo journalctl -u plant-ops-ai | grep "Soil ADC"
 ```
 
-If the soil is genuinely wet and the value looks wrong, consider adding more calibration measurements at wetter soil conditions and refitting the curve (see `soil_moisture_calibration_curve.xlsx` and the calibration section in `ARCHITECTURE.md`).
-
-If the value looks wrong when the soil is dry, verify the Arduino CSV field order matches what `farmctl.py` expects (co2, tempC, rh, lightRaw, soilRaw, ...) by running:
-
-```bash
-python3 farmctl/farmctl.py status
-```
-
-and comparing raw output against the parsed JSON.
+The calibration was measured over ADC 390–822 (≈18–56% moisture). ADC values below 390 are extrapolated and can underestimate by up to ~10 percentage points. See `soil_moisture_calibration_curve.xlsx` and `ARCHITECTURE.md` for details on extending the calibration range.
 
 ### High API costs
 

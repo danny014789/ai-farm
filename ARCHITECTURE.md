@@ -329,6 +329,8 @@ moisture_pct = exp(-0.00258653 × ADC + 4.91733458)   clamped to [0, 100]
 
 The system logs a `WARNING` whenever a reading falls outside the calibrated range, and the AI system prompt explicitly tells Claude to treat 100% as "saturated / clamped" rather than a precise figure.
 
+**Source-field tracking**: `_parse_sensor_json` tracks whether the soil value came from `soil_raw` (raw ADC, always needs conversion) or `soil_moisture_pct` (already a percentage, pass through). This prevents a bug where an ADC value ≤ 100 (very wet soil) would bypass conversion and be returned directly as a percentage.
+
 **Improving accuracy at the wet end**: add calibration measurements at ADC < 390 (progressively wetter soil samples with known gravimetric moisture) to `soil_moisture_calibration_curve.xlsx` and refit the coefficients in `sensor_reader.py`.
 
 ## Offline / Fallback Behavior
