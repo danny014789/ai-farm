@@ -264,7 +264,7 @@ plant-ops-ai/
   src/
     plant_agent.py         # main entry point / orchestrator
     claude_client.py       # Anthropic API wrapper
-    sensor_reader.py       # calls farmctl.py status, parses output
+    sensor_reader.py       # calls farmctl.py status, parses output; converts soil ADC → % via exponential calibration
     action_executor.py     # calls farmctl.py commands with safety checks
     actuator_state.py      # tracks actuator on/off state
     safety.py              # hardcoded safety limits + validation
@@ -316,6 +316,20 @@ The system prompt should be:
 - **Conservative** - when in doubt, do nothing and notify human
 
 See `src/prompts.py` for the actual prompt (to be implemented).
+
+## Soil Moisture Calibration
+
+The soil sensor outputs a raw ADC value (0–1023). `sensor_reader.py` converts it using an exponential fit over 9 measured data points:
+
+```
+moisture_pct = exp(-0.00258653 × ADC + 4.91733458)   clamped to [0, 100]
+```
+
+**Calibrated range**: ADC 390–822 (≈18–56% moisture). Outside this range the equation extrapolates; readings below ADC 390 (wet soil) can underestimate actual moisture by up to ~10 percentage points. A result of 100% indicates the sensor ADC is below ~121 — sensor is saturated or out of measurable range.
+
+The system logs a `WARNING` whenever a reading falls outside the calibrated range, and the AI system prompt explicitly tells Claude to treat 100% as "saturated / clamped" rather than a precise figure.
+
+**Improving accuracy at the wet end**: add calibration measurements at ADC < 390 (progressively wetter soil samples with known gravimetric moisture) to `soil_moisture_calibration_curve.xlsx` and refit the coefficients in `sensor_reader.py`.
 
 ## Offline / Fallback Behavior
 

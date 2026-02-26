@@ -49,7 +49,7 @@ plant-ops-ai/
 │   ├── claude_client.py        # Anthropic API wrapper
 │   ├── prompts.py              # System/user prompt templates
 │   ├── plant_knowledge.py      # One-time plant research + caching
-│   ├── sensor_reader.py        # farmctl.py sensor reading
+│   ├── sensor_reader.py        # farmctl.py sensor reading + soil moisture calibration
 │   ├── action_executor.py      # farmctl.py action execution
 │   ├── actuator_state.py       # Track actuator on/off state
 │   ├── safety.py               # Safety validation layer
@@ -181,6 +181,27 @@ To invite someone to use your bot:
 3. They send you the number
 4. You add their ID to `.env`: `TELEGRAM_CHAT_ID=your_id,their_id`
 5. Restart the bot
+
+## Soil Moisture Calibration
+
+The capacitive soil moisture sensor outputs a raw ADC value (0–1023). `sensor_reader.py` converts this using an exponential (log-linear) fit derived from 9 measured data points (`soil_moisture_calibration_curve.xlsx`):
+
+```
+moisture_pct = exp(-0.00258653 × ADC + 4.91733458)
+```
+
+**Calibrated range**: ADC 390–822 → ≈18–56% moisture. Readings outside this range are extrapolated and less reliable:
+
+| ADC | Expected moisture | Reliability |
+|-----|-------------------|-------------|
+| 822 | ~18% | Calibrated (driest measured) |
+| 390 | ~56% | Calibrated (wettest measured) |
+| < 390 | > 56% (extrapolated) | May underestimate by up to ~10 pp |
+| < ~121 | Clamped to 100% | Sensor saturated / out of range |
+
+When a reading falls outside the calibrated range, the system logs a warning. A value of **100%** in `/status` means the sensor ADC is very low (wet soil near or past saturation) — not necessarily exactly 100% moisture.
+
+The calibration curve and raw data live in `soil_moisture_calibration_curve.xlsx`. Add measurements at wetter soil conditions (ADC < 390) and refit to improve accuracy at the wet end.
 
 ## AI Memory System
 

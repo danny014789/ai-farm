@@ -280,6 +280,26 @@ Photo capture failed, continuing without photo
 - Look at logs for warnings: `sudo journalctl -u plant-ops-ai | grep -i job`
 - Verify the bot is not paused: check if `data/.paused` exists
 
+### Soil moisture reads 100% (or unexpectedly high)
+
+A soil moisture of **100%** in `/status` means the sensor's raw ADC value is very low (≤ ~121), which causes the calibration formula to return > 100% and clamp to 100%. This indicates the sensor is near or past saturation — the soil is very wet. It does **not** mean the reading is precisely 100%.
+
+The calibration was measured over ADC 390–822 (≈18–56% moisture). ADC values below 390 (wetter soil) are extrapolated and can underestimate actual moisture by up to ~10 percentage points. Check the system log for a `WARNING` line:
+
+```
+sudo journalctl -u plant-ops-ai | grep "Soil ADC"
+```
+
+If the soil is genuinely wet and the value looks wrong, consider adding more calibration measurements at wetter soil conditions and refitting the curve (see `soil_moisture_calibration_curve.xlsx` and the calibration section in `ARCHITECTURE.md`).
+
+If the value looks wrong when the soil is dry, verify the Arduino CSV field order matches what `farmctl.py` expects (co2, tempC, rh, lightRaw, soilRaw, ...) by running:
+
+```bash
+python3 farmctl/farmctl.py status
+```
+
+and comparing raw output against the parsed JSON.
+
 ### High API costs
 
 - The default daily cost cap in `config/safety_limits.yaml` is $1.00/day

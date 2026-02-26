@@ -25,14 +25,38 @@ logger = logging.getLogger(__name__)
 SOIL_CAL_LOG_SLOPE: float = -0.00258653
 SOIL_CAL_LOG_INTERCEPT: float = 4.91733458
 
+# Measured calibration range (from soil_moisture_calibration_curve.xlsx).
+# ADC readings outside this range are extrapolated; accuracy degrades noticeably
+# below ADC ~390 (wettest measured point, 55.99%) where the curve underestimates
+# by up to ~10 percentage points. Values clamped to 100% indicate the sensor is
+# saturated or beyond the measurable range.
+SOIL_CAL_ADC_MIN: float = 390.0   # wettest calibrated point → 55.99%
+SOIL_CAL_ADC_MAX: float = 822.0   # driest calibrated point  → 18.31%
+
 
 def _soil_adc_to_pct(adc: float) -> float:
     """Convert a raw ADC reading to soil moisture % using the exponential calibration.
 
     Applies  moisture = exp(SOIL_CAL_LOG_SLOPE * adc + SOIL_CAL_LOG_INTERCEPT),
     then clamps to [0, 100].
+
+    Logs a warning when *adc* is outside the measured calibration range
+    (390–822); extrapolated values are less reliable.
     """
-    return max(0.0, min(100.0, math.exp(SOIL_CAL_LOG_SLOPE * adc + SOIL_CAL_LOG_INTERCEPT)))
+    pct = math.exp(SOIL_CAL_LOG_SLOPE * adc + SOIL_CAL_LOG_INTERCEPT)
+    if adc < SOIL_CAL_ADC_MIN:
+        logger.warning(
+            "Soil ADC %g is below the calibration range (min measured: %g → 55.99%%). "
+            "Extrapolated moisture %.1f%% may underestimate actual moisture by up to ~10%%.",
+            adc, SOIL_CAL_ADC_MIN, min(pct, 100.0),
+        )
+    elif adc > SOIL_CAL_ADC_MAX:
+        logger.warning(
+            "Soil ADC %g is above the calibration range (max measured: %g → 18.31%%). "
+            "Extrapolated moisture %.1f%% may underestimate actual dryness.",
+            adc, SOIL_CAL_ADC_MAX, max(pct, 0.0),
+        )
+    return max(0.0, min(100.0, pct))
 
 
 @dataclass
@@ -198,11 +222,22 @@ def _parse_sensor_json(data: dict) -> SensorData:
         co2_ppm = int(float(resolved["co2_ppm"]))
         light_level = int(float(resolved["light_level"]))
 
-        # Convert soil raw ADC to percentage if the value came from "soil_raw".
-        # Values already in the 0-100 range pass through unchanged.
+        # Convert soil raw ADC to percentage.
+        # Track the source field: "soil_raw" always requires ADC→% conversion,
+        # even when the ADC happens to be ≤ 100 (very wet soil).
+        # "soil_moisture_pct" is already a percentage and passes through as-is.
+        soil_came_from_raw = "soil_raw" in data and "soil_moisture_pct" not in data
         soil_value = float(resolved["soil_moisture"])
-        if soil_value > 100:
-            # Raw ADC value -- convert via piecewise linear calibration curve.
+        if soil_came_from_raw:
+            logger.debug("soil_raw=%g → applying ADC calibration", soil_value)
+            soil_moisture_pct = round(_soil_adc_to_pct(soil_value), 1)
+        elif soil_value > 100:
+            # soil_moisture_pct field but value > 100 — treat as raw ADC.
+            logger.warning(
+                "soil_moisture_pct field has unexpected value %g (> 100); "
+                "applying ADC calibration as fallback.",
+                soil_value,
+            )
             soil_moisture_pct = round(_soil_adc_to_pct(soil_value), 1)
         else:
             soil_moisture_pct = soil_value
