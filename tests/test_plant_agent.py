@@ -135,6 +135,7 @@ class TestRunCheck:
             "timestamp", "sensor_data", "decision",
             "actions_taken", "executed", "photo_path", "error", "mode",
             "observations", "knowledge_update", "hardware_update",
+            "weather_data",
         }
         assert set(summary.keys()) == expected_keys
 

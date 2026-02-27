@@ -728,7 +728,7 @@ async def _execute_pending_action(
         return
 
     # Load history for rate limiting
-    history = load_recent_decisions(10, data_dir)
+    history = load_recent_decisions(20, data_dir)
 
     # Execute through the shared validate -> execute -> log pipeline
     actions = [{
@@ -900,7 +900,7 @@ async def chat_message_handler(
         hardware_profile = load_hardware_profile()
     except FileNotFoundError:
         hardware_profile = {}
-    history = load_recent_decisions(10, data_dir)
+    history = load_recent_decisions(20, data_dir)
     plant_log = load_recent_plant_log(20, data_dir)
     actuator_state = reconcile_actuator_state(sensor_data.to_dict(), data_dir)
     try:

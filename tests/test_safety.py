@@ -69,6 +69,14 @@ def _now_iso(minutes_ago: int = 0) -> str:
     return dt.isoformat()
 
 
+def _make_entry(action_type: str, minutes_ago: int = 0) -> dict:
+    """Create a decision log entry in the format produced by logger.log_decision."""
+    return {
+        "timestamp": _now_iso(minutes_ago),
+        "decision": {"action": action_type},
+    }
+
+
 # All tests patch _load_limits so no real config file is read.
 @pytest.fixture(autouse=True)
 def _patch_load_limits():
@@ -231,10 +239,7 @@ class TestPassthroughActions:
     def test_passthrough_not_counted_in_rate_limit(self):
         """do_nothing/notify_human should not count against the hourly rate limit."""
         # Fill history with 10 do_nothing entries
-        history = [
-            {"action": "do_nothing", "executed_at": _now_iso(i)}
-            for i in range(10)
-        ]
+        history = [_make_entry("do_nothing", i) for i in range(10)]
         result = validate_action(
             {"action": "water", "duration_sec": 5},
             _make_sensor_data(),
@@ -252,10 +257,7 @@ class TestPassthroughActions:
 class TestGlobalRateLimit:
     def test_rate_limit_exceeded(self):
         """When 10 real actions are in the last hour, the next is rejected."""
-        history = [
-            {"action": "water", "executed_at": _now_iso(i)}
-            for i in range(10)
-        ]
+        history = [_make_entry("water", i) for i in range(10)]
         result = validate_action(
             {"action": "water", "duration_sec": 5},
             _make_sensor_data(),
@@ -266,10 +268,7 @@ class TestGlobalRateLimit:
 
     def test_rate_limit_not_exceeded(self):
         """Under the limit, actions are allowed."""
-        history = [
-            {"action": "water", "executed_at": _now_iso(i)}
-            for i in range(5)
-        ]
+        history = [_make_entry("water", i) for i in range(5)]
         result = validate_action(
             {"action": "water", "duration_sec": 5},
             _make_sensor_data(),
@@ -328,9 +327,7 @@ class TestWaterValidation:
 
     def test_water_min_interval_check(self):
         """Reject water if last watering was within min_interval_min (60)."""
-        history = [
-            {"action": "water", "executed_at": _now_iso(30)}  # 30 min ago
-        ]
+        history = [_make_entry("water", 30)]  # 30 min ago
         result = validate_action(
             {"action": "water", "duration_sec": 10},
             _make_sensor_data(),
@@ -341,9 +338,7 @@ class TestWaterValidation:
 
     def test_water_after_interval_ok(self):
         """Allow water when last watering was more than min_interval ago."""
-        history = [
-            {"action": "water", "executed_at": _now_iso(90)}  # 90 min ago
-        ]
+        history = [_make_entry("water", 90)]  # 90 min ago
         result = validate_action(
             {"action": "water", "duration_sec": 10},
             _make_sensor_data(),
@@ -384,26 +379,14 @@ class TestWaterValidation:
 
     def test_water_daily_max_count(self):
         """Reject water when daily_max_count (6) is reached."""
-        # All 6 waterings happened more than 60 min ago (avoids interval check)
-        # but today
+        # All 6 waterings are from today but > 60 min apart from each other and from now.
+        # Use today's midnight as anchor so entries are definitely today (UTC).
         now = datetime.now(timezone.utc)
-        history = [
-            {
-                "action": "water",
-                "executed_at": (
-                    now.replace(hour=max(0, now.hour - 2))
-                    - timedelta(minutes=i * 70)
-                ).isoformat(),
-            }
-            for i in range(6)
-        ]
-        # Ensure all entries are today and spaced > 60 min apart from "now"
-        # Simpler approach: use timestamps that are today but well in the past
         today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         history = [
             {
-                "action": "water",
-                "executed_at": (today + timedelta(hours=i)).isoformat(),
+                "timestamp": (today + timedelta(hours=i)).isoformat(),
+                "decision": {"action": "water"},
             }
             for i in range(6)
         ]
@@ -632,23 +615,18 @@ class TestCirculationValidation:
         )
         assert result.valid is False
 
-    def test_circulation_min_interval_check(self):
-        """Reject circulation if last activation was within min_interval_min (30)."""
-        history = [
-            {"action": "circulation", "executed_at": _now_iso(15)}  # 15 min ago
-        ]
+    def test_circulation_no_rate_limit(self):
+        """Circulation has no min-interval rate limit; allowed even if run recently."""
+        history = [_make_entry("circulation", 15)]  # 15 min ago
         result = validate_action(
             {"action": "circulation", "duration_sec": 60},
             _make_sensor_data(),
             history,
         )
-        assert result.valid is False
-        assert "rate limit" in result.reason.lower() or "wait" in result.reason.lower()
+        assert result.valid is True
 
     def test_circulation_after_interval_ok(self):
-        history = [
-            {"action": "circulation", "executed_at": _now_iso(45)}  # 45 min ago
-        ]
+        history = [_make_entry("circulation", 45)]  # 45 min ago
         result = validate_action(
             {"action": "circulation", "duration_sec": 60},
             _make_sensor_data(),

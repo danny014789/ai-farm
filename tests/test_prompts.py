@@ -208,10 +208,13 @@ class TestBuildUserPrompt:
         history = [
             {
                 "timestamp": "2026-02-18T09:00:00Z",
-                "action": "water",
-                "params": {"duration_sec": 10},
-                "reason": "Soil dry",
-                "urgency": "normal",
+                "decision": {
+                    "action": "water",
+                    "params": {"duration_sec": 10},
+                    "reason": "Soil dry",
+                    "urgency": "normal",
+                },
+                "executed": True,
             }
         ]
         blocks = build_user_prompt(
@@ -325,17 +328,23 @@ class TestFormatHistory:
         history = [
             {
                 "timestamp": "2026-02-18T09:00:00Z",
-                "action": "water",
-                "params": {"duration_sec": 10},
-                "reason": "Soil dry",
-                "urgency": "normal",
+                "decision": {
+                    "action": "water",
+                    "params": {"duration_sec": 10},
+                    "reason": "Soil dry",
+                    "urgency": "normal",
+                },
+                "executed": True,
             },
             {
                 "timestamp": "2026-02-18T08:00:00Z",
-                "action": "do_nothing",
-                "params": {},
-                "reason": "All OK",
-                "urgency": "normal",
+                "decision": {
+                    "action": "do_nothing",
+                    "params": {},
+                    "reason": "All OK",
+                    "urgency": "normal",
+                },
+                "executed": True,
             },
         ]
         text = _format_history(history)
@@ -351,10 +360,13 @@ class TestFormatHistory:
         history = [
             {
                 "timestamp": "2026-02-18T09:00:00Z",
-                "action": "water",
-                "params": {"duration_sec": 15},
-                "reason": "dry",
-                "urgency": "attention",
+                "decision": {
+                    "action": "water",
+                    "params": {"duration_sec": 15},
+                    "reason": "dry",
+                    "urgency": "attention",
+                },
+                "executed": True,
             },
         ]
         text = _format_history(history)
@@ -362,7 +374,7 @@ class TestFormatHistory:
         assert "attention" in text
 
     def test_missing_fields_handled(self):
-        history = [{"action": "water"}]
+        history = [{"decision": {"action": "water"}}]
         text = _format_history(history)
         assert "water" in text
         # Should not crash on missing timestamp/reason

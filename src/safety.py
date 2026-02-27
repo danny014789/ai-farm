@@ -153,7 +153,7 @@ def validate_action(
     # Only count actions that actually did something (not do_nothing/notify)
     real_actions = [
         a for a in recent_actions
-        if a.get("action") not in ("do_nothing", "notify_human")
+        if a.get("decision", {}).get("action") not in ("do_nothing", "notify_human")
     ]
     if len(real_actions) >= max_per_hour:
         return ValidationResult(
@@ -220,11 +220,17 @@ def _validate_water(
         history, now, minutes=min_interval, action_type="water"
     )
     if recent_water:
-        last = recent_water[-1].get("executed_at", "unknown")
+        last = recent_water[-1].get("timestamp", "unknown")
+        last_ts = _parse_timestamp(last) if last != "unknown" else None
+        if last_ts is not None:
+            remaining_min = int(min_interval - (now - last_ts).total_seconds() / 60)
+            detail = f"Last watering at {last} ({remaining_min} min remaining)."
+        else:
+            detail = f"Last watering at {last}."
         return ValidationResult(
             valid=False,
             reason=f"Water rate limit: must wait {min_interval} min between waterings. "
-                   f"Last watering at {last}.",
+                   f"{detail}",
             capped_action=action,
         )
 

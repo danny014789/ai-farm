@@ -151,7 +151,7 @@ def run_check(
 
     # --- 3. Load context ---
     profile = load_plant_profile()
-    history = load_recent_decisions(10, data_dir)
+    history = load_recent_decisions(20, data_dir)
 
     plant_knowledge = ""
     plant_name = profile.get("plant", {}).get("name", "")
