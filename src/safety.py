@@ -49,8 +49,8 @@ def _load_limits() -> dict[str, Any]:
         return {
             "water": {
                 "max_duration_sec": 30,
-                "min_interval_min": 60,
-                "daily_max_count": 6,
+                "min_interval_min": 30,
+                "daily_max_count": 12,
             },
             "heater": {
                 "max_temp_c": 30.0,
@@ -383,6 +383,10 @@ def _actions_in_window(
     results = []
 
     for entry in history:
+        # Only count actions that were actually executed — blocked/failed actions
+        # must not consume rate-limit slots.
+        if not entry.get("executed", True):
+            continue
         # Log records store timestamp under "timestamp", action under "decision.action".
         ts = _parse_timestamp(entry.get("timestamp", ""))
         if ts is None:
@@ -416,6 +420,9 @@ def _actions_today(
     results = []
 
     for entry in history:
+        # Only count actions that were actually executed.
+        if not entry.get("executed", True):
+            continue
         # Log records store timestamp under "timestamp", action under "decision.action".
         ts = _parse_timestamp(entry.get("timestamp", ""))
         if ts is None:

@@ -3,8 +3,8 @@
 
 water:
   max_duration_sec: 30        # max single watering duration
-  min_interval_min: 60        # minimum minutes between waterings
-  daily_max_count: 6          # max waterings per day
+  min_interval_min: 30        # minimum minutes between waterings
+  daily_max_count: 12         # max waterings per day
 
 heater:
   max_temp_c: 30.0            # heater turns off above this temp

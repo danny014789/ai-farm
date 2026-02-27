@@ -22,8 +22,8 @@ from src.sensor_reader import SensorData
 SAFETY_LIMITS = {
     "water": {
         "max_duration_sec": 30,
-        "min_interval_min": 60,
-        "daily_max_count": 6,
+        "min_interval_min": 30,
+        "daily_max_count": 12,
     },
     "heater": {
         "max_temp_c": 30.0,
@@ -326,8 +326,8 @@ class TestWaterValidation:
         assert "positive" in result.reason.lower()
 
     def test_water_min_interval_check(self):
-        """Reject water if last watering was within min_interval_min (60)."""
-        history = [_make_entry("water", 30)]  # 30 min ago
+        """Reject water if last watering was within min_interval_min (30)."""
+        history = [_make_entry("water", 15)]  # 15 min ago
         result = validate_action(
             {"action": "water", "duration_sec": 10},
             _make_sensor_data(),
@@ -336,9 +336,20 @@ class TestWaterValidation:
         assert result.valid is False
         assert "rate limit" in result.reason.lower() or "wait" in result.reason.lower()
 
+    def test_water_not_locked_when_previous_was_blocked(self):
+        """A water action that was blocked (executed=False) must not consume the lock."""
+        blocked_entry = {**_make_entry("water", 15), "executed": False}
+        history = [blocked_entry]
+        result = validate_action(
+            {"action": "water", "duration_sec": 10},
+            _make_sensor_data(),
+            history,
+        )
+        assert result.valid is True
+
     def test_water_after_interval_ok(self):
         """Allow water when last watering was more than min_interval ago."""
-        history = [_make_entry("water", 90)]  # 90 min ago
+        history = [_make_entry("water", 45)]  # 45 min ago — past the 30-min window
         result = validate_action(
             {"action": "water", "duration_sec": 10},
             _make_sensor_data(),
@@ -378,17 +389,17 @@ class TestWaterValidation:
         assert result.valid is True
 
     def test_water_daily_max_count(self):
-        """Reject water when daily_max_count (6) is reached."""
-        # All 6 waterings are from today but > 60 min apart from each other and from now.
+        """Reject water when daily_max_count (12) is reached."""
+        # All 12 waterings are from today but > 30 min apart from each other and from now.
         # Use today's midnight as anchor so entries are definitely today (UTC).
         now = datetime.now(timezone.utc)
         today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         history = [
             {
-                "timestamp": (today + timedelta(hours=i)).isoformat(),
+                "timestamp": (today + timedelta(minutes=i * 40)).isoformat(),
                 "decision": {"action": "water"},
             }
-            for i in range(6)
+            for i in range(12)
         ]
 
         result = validate_action(
