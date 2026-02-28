@@ -91,7 +91,7 @@ def run_check(
         executed, photo_path, error (if any).
     """
     summary: dict = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now().astimezone().isoformat(),
         "sensor_data": None,
         "decision": None,
         "actions_taken": [],
@@ -355,7 +355,7 @@ def append_knowledge_update(update_text: str, data_dir: str) -> None:
         data_dir: Path to the data directory.
     """
     knowledge_path = Path(data_dir) / "plant_knowledge.md"
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    ts = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
     entry = f"\n\n---\n*AI Update ({ts}):* {update_text}\n"
     with open(knowledge_path, "a") as f:
         f.write(entry)

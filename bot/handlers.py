@@ -548,7 +548,7 @@ async def pause_command(
     """Handle /pause - pause automated monitoring."""
     pause = _pause_file(context)
     pause.parent.mkdir(parents=True, exist_ok=True)
-    pause.write_text(datetime.now(timezone.utc).isoformat())
+    pause.write_text(datetime.now().astimezone().isoformat())
     await update.message.reply_text(
         "Automated monitoring PAUSED.\n"
         "The bot will not run scheduled checks until you /resume."
@@ -837,7 +837,7 @@ async def _research_plant(
         knowledge_path.parent.mkdir(parents=True, exist_ok=True)
         knowledge_path.write_text(
             f"# {plant_name} - {stage} stage\n\n"
-            f"Researched: {datetime.now(timezone.utc).isoformat()}\n\n"
+            f"Researched: {datetime.now().astimezone().isoformat()}\n\n"
             f"{content}\n"
         )
 
@@ -910,6 +910,9 @@ async def chat_message_handler(
             f"No plant configured yet.\nUse /setplant <name> to set a plant first.\n\n({exc})"
         )
         return
+    except Exception as exc:
+        logger.warning("Plant knowledge unavailable in chat, continuing without it: %s", exc)
+        plant_knowledge = ""
 
     # Get AI response
     weather_data = fetch_weather()

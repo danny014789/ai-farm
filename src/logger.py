@@ -89,7 +89,7 @@ def log_plant_observations(
 
     dirpath = _ensure_dir(data_dir)
     filepath = dirpath / PLANT_LOG_FILE
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now().astimezone().isoformat()
 
     for obs in observations:
         record = {"timestamp": ts, "observation": obs, "source": source}
@@ -120,7 +120,7 @@ def log_sensor_reading(data: SensorData, data_dir: str) -> None:
     """
     dirpath = _ensure_dir(data_dir)
     record = data.to_dict()
-    record["logged_at"] = datetime.now(timezone.utc).isoformat()
+    record["logged_at"] = datetime.now().astimezone().isoformat()
 
     _append_jsonl(dirpath / SENSOR_FILE, record)
 
@@ -146,7 +146,7 @@ def log_decision(
     dirpath = _ensure_dir(data_dir)
 
     record = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now().astimezone().isoformat(),
         "source": source,
         "sensor_data": sensor_data.to_dict(),
         "decision": decision,
@@ -204,7 +204,7 @@ def get_daily_action_counts(data_dir: str) -> dict[str, int]:
     filepath = Path(data_dir) / DECISION_FILE
     records = _read_jsonl(filepath)
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now().astimezone().date().isoformat()
     counts: dict[str, int] = {}
 
     for record in records:

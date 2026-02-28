@@ -530,7 +530,7 @@ def research_plant(
     header = (
         f"# Growing Guide: {plant_name}{variety_label}\n\n"
         f"*Growth stage: {growth_stage}*  \n"
-        f"*Researched: {datetime.now(tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*\n\n"
+        f"*Researched: {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M %Z')}*\n\n"
         "---\n\n"
     )
 
