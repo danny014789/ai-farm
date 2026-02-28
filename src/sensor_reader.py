@@ -260,7 +260,7 @@ def _parse_sensor_json(data: dict) -> SensorData:
             soil_moisture_pct=soil_moisture_pct,
             timestamp=data.get(
                 "timestamp",
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now().astimezone().isoformat(),
             ),
             water_tank_ok=water_tank_ok,
             light_on=light_on,
@@ -290,7 +290,7 @@ def read_sensors_mock() -> SensorData:
         co2_ppm=450,
         light_level=780,
         soil_moisture_pct=45.0,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now().astimezone().isoformat(),
         water_tank_ok=True,
         light_on=False,
         heater_on=False,
