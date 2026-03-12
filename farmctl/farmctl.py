@@ -113,7 +113,7 @@ def serial_status(sc: SerialClient) -> Dict[str, Any]:
 
 def camera_snap(out_path: str, timeout_ms: int = 1200) -> Dict[str, Any]:
     out_path = os.path.expanduser(out_path)
-    cmd = f"rpicam-still -o {shlex.quote(out_path)} -t {int(timeout_ms)} --nopreview"
+    cmd = f"rpicam-still -o {shlex.quote(out_path)} -t {int(timeout_ms)} --nopreview --ev -1"
     rc, out, err = run(cmd, timeout=20)
     exists = os.path.exists(out_path)
     size = os.path.getsize(out_path) if exists else 0
