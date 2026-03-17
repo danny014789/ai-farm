@@ -20,6 +20,7 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -47,6 +48,7 @@ from bot.handlers import (
     pause_command,
     photo_command,
     profile_command,
+    restart_command,
     resume_command,
     setplant_command,
     start_command,
@@ -64,6 +66,26 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat job
+# ---------------------------------------------------------------------------
+
+
+async def heartbeat_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Write a timestamp to data/.heartbeat every 5 minutes.
+
+    Used by deploy/watchdog.sh to detect when the bot process has hung
+    (running but not processing the job queue). If this file is not
+    updated within 10 minutes the watchdog restarts the service.
+    """
+    data_dir = context.bot_data.get("data_dir", "data")
+    heartbeat_file = Path(data_dir) / ".heartbeat"
+    try:
+        heartbeat_file.write_text(datetime.now().astimezone().isoformat())
+    except Exception:
+        logger.warning("Failed to write heartbeat file", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +316,7 @@ def main() -> None:
     application.add_handler(CommandHandler("pause", pause_command))
     application.add_handler(CommandHandler("resume", resume_command))
     application.add_handler(CommandHandler("mode", mode_command))
+    application.add_handler(CommandHandler("restart", restart_command))
 
     # Natural language chat handler (catches all non-command text)
     application.add_handler(
@@ -306,7 +329,7 @@ def main() -> None:
     # Global error handler (catches Conflict, BadRequest, etc. cleanly)
     application.add_error_handler(_error_handler)
 
-    # --- Schedule hourly monitoring check ----------------------------------
+    # --- Schedule hourly monitoring check and heartbeat --------------------
     job_queue = application.job_queue
     if job_queue is not None:
         job_queue.run_repeating(
@@ -314,7 +337,13 @@ def main() -> None:
             interval=3600,    # every hour
             first=10,         # first run 10 seconds after startup
         )
+        job_queue.run_repeating(
+            heartbeat_job,
+            interval=300,     # every 5 minutes
+            first=5,
+        )
         logger.info("Scheduled monitoring check registered (every 3600s)")
+        logger.info("Heartbeat job registered (every 300s)")
     else:
         logger.warning(
             "JobQueue not available. Install python-telegram-bot[job-queue] "

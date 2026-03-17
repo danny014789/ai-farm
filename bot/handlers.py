@@ -14,6 +14,7 @@ import functools
 import json
 import logging
 import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Coroutine
@@ -244,6 +245,7 @@ async def help_command(
         "Automation:\n"
         "  /pause           - Pause scheduled monitoring\n"
         "  /resume          - Resume scheduled monitoring\n"
+        "  /restart         - Restart the bot service\n"
     )
     await _send_long_message(update.message, text)
 
@@ -867,6 +869,36 @@ async def _research_plant(
             f"Research failed: {exc}\n"
             f"The plant name and stage have been saved. "
             f"You can manually edit config/plant_profile.yaml."
+        )
+
+
+@authorized_only
+async def restart_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /restart - restart the plant-ops-ai systemd service.
+
+    Sends an acknowledgement, then triggers a non-blocking systemd restart.
+    The service will be back online within ~30 seconds (RestartSec).
+    Requires passwordless sudo for 'systemctl restart plant-ops-ai' — see
+    PI_SETUP.md for the sudoers configuration.
+    """
+    await update.message.reply_text(
+        "Restarting plant-ops-ai service...\n"
+        "I will be back online in ~30 seconds."
+    )
+    try:
+        subprocess.Popen(
+            ["sudo", "systemctl", "restart", "plant-ops-ai"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as exc:
+        logger.exception("Failed to trigger service restart")
+        await update.message.reply_text(
+            f"Restart command failed: {exc}\n"
+            "SSH into the Pi and run:\n"
+            "  sudo systemctl restart plant-ops-ai"
         )
 
 

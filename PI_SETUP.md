@@ -120,7 +120,7 @@ When you are satisfied everything works, switch to live mode:
 - Send `/mode live` in Telegram, or
 - Edit `.env` and set `AGENT_MODE=live`, then restart the bot
 
-## 9. Run as a systemd Service
+## 9. Run as a systemd Service and Install Watchdog
 
 To keep the bot running after you close SSH and auto-restart on boot, use the included install script. It automatically detects your username and paths:
 
@@ -148,6 +148,33 @@ sudo systemctl restart plant-ops-ai
 # Stop the service
 sudo systemctl stop plant-ops-ai
 ```
+
+### Install the Watchdog (recommended)
+
+The systemd `Restart=always` policy handles clean crashes, but if the bot process **hangs** (stuck on a network call, serial read, etc.) it stays "running" and systemd never restarts it. The watchdog catches this by monitoring a heartbeat file that the bot updates every 5 minutes.
+
+Run the watchdog installer **once** after deploying:
+
+```bash
+cd ~/plant-ops-ai
+sudo bash deploy/install_watchdog.sh
+```
+
+This does two things:
+
+1. **Adds a root cron job** — runs `deploy/watchdog.sh` every 5 minutes. If the service is not active, or if the heartbeat file is more than 10 minutes old, it restarts the service and logs the event to `data/watchdog.log`.
+
+2. **Configures a sudoers rule** — allows the Pi user to run `sudo systemctl restart plant-ops-ai` without a password, which is required by the Telegram `/restart` command (see below).
+
+### Telegram /restart command
+
+Send `/restart` to the bot at any time to trigger a graceful service restart from Telegram:
+
+- The bot replies with a confirmation, then issues `sudo systemctl restart plant-ops-ai`
+- The process exits and systemd brings it back within ~30 seconds
+- Useful after a `git pull` when you want to reload without SSHing in
+
+> **Note:** `/restart` only works when the bot is still responsive. If the bot is completely dead or hung, the watchdog (above) will restart it automatically — or you can SSH in and run `sudo systemctl restart plant-ops-ai` manually.
 
 ## 10. Monitoring
 
@@ -224,6 +251,62 @@ sudo systemctl restart plant-ops-ai
 ```
 
 ## 13. Troubleshooting
+
+### Bot is dead — sends no response to Telegram messages
+
+Work through these checks in order:
+
+**1. Check the service status:**
+
+```bash
+sudo systemctl status plant-ops-ai
+```
+
+If the service shows `failed` or `inactive`, restart it:
+
+```bash
+sudo systemctl restart plant-ops-ai
+```
+
+**2. Check live logs for the root cause:**
+
+```bash
+sudo journalctl -u plant-ops-ai -n 100 --no-pager
+```
+
+Common error patterns and fixes:
+
+| Log message | Cause | Fix |
+|-------------|-------|-----|
+| `Conflict (409): another bot instance...` | Two instances running same token | `sudo systemctl stop plant-ops-ai; sudo pkill -f telegram_bot; sudo systemctl start plant-ops-ai` |
+| `TELEGRAM_BOT_TOKEN environment variable is required` | `.env` missing or token not set | Check `~/.env` or `~/plant-ops-ai/.env` |
+| `getaddrinfo failed` / `Network is unreachable` | No internet on the Pi | Check Pi network; Telegram needs internet access |
+| `Start request repeated too quickly` | Crash loop hit systemd rate limit | `sudo systemctl reset-failed plant-ops-ai; sudo systemctl start plant-ops-ai` |
+
+**3. Check if the process is hung (running but not responding):**
+
+```bash
+# Check heartbeat age — should be < 5 minutes
+ls -la ~/plant-ops-ai/data/.heartbeat
+date
+
+# If stale (>10 min old), the bot is hung. Force restart:
+sudo systemctl restart plant-ops-ai
+```
+
+**4. Trigger restart remotely via Telegram (if partially responsive):**
+
+If the bot is still alive but sluggish, send `/restart` — it will acknowledge and restart the service within 30 seconds.
+
+**5. Check watchdog logs:**
+
+```bash
+cat ~/plant-ops-ai/data/watchdog.log
+```
+
+If the watchdog has been restarting the service repeatedly, it means the bot keeps hanging or crashing — investigate the service logs for a root cause.
+
+---
 
 ### Bot does not start
 
