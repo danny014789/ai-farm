@@ -18,20 +18,23 @@ logger = logging.getLogger(__name__)
 
 # Soil moisture exponential calibration (log-linear fit).
 # Fit method: ln(moisture_pct) ~ slope * adc + intercept, then exponentiate.
-# Least-squares fit to 9 measured points (soil_moisture_calibration_curve.xlsx).
-# R² = 0.916 in original space (vs 0.836 for a plain linear fit).
+# Least-squares fit to 5 online calibration points for the new capacitive sensor.
+# Sensor reference measurements: in water → ADC 0, in air → ADC 524.
+# Note: air (524) < dry soil at 5% moisture (612) — physically correct because
+# dry soil has higher dielectric constant than air (ε_soil_dry ≈ 3–5 vs ε_air ≈ 1).
+# Calibration points (online source, SD ≈ 50 ADC):
+#   5% → 612,  10% → 536,  20% → 462,  30% → 354,  40% → 310
+# Accuracy: ±4–6 pp within calibrated range; larger uncertainty outside it.
 #   moisture_pct = exp(SOIL_CAL_LOG_SLOPE * adc + SOIL_CAL_LOG_INTERCEPT)
 # Result is clamped to [0, 100] % for ADC values outside the physical range.
-SOIL_CAL_LOG_SLOPE: float = -0.00258653
-SOIL_CAL_LOG_INTERCEPT: float = 4.91733458
+SOIL_CAL_LOG_SLOPE: float = -0.006649
+SOIL_CAL_LOG_INTERCEPT: float = 5.8236
 
-# Measured calibration range (from soil_moisture_calibration_curve.xlsx).
-# ADC readings outside this range are extrapolated; accuracy degrades noticeably
-# below ADC ~390 (wettest measured point, 55.99%) where the curve underestimates
-# by up to ~10 percentage points. Values clamped to 100% indicate the sensor is
-# saturated or beyond the measurable range.
-SOIL_CAL_ADC_MIN: float = 390.0   # wettest calibrated point → 55.99%
-SOIL_CAL_ADC_MAX: float = 822.0   # driest calibrated point  → 18.31%
+# Measured calibration range.
+# ADC readings outside this range are extrapolated; accuracy degrades noticeably.
+# Values clamped to 100% indicate the sensor is saturated or beyond measurable range.
+SOIL_CAL_ADC_MIN: float = 310.0   # wettest calibrated point → ~40%
+SOIL_CAL_ADC_MAX: float = 612.0   # driest calibrated point  → ~5%
 
 
 def _soil_adc_to_pct(adc: float) -> float:
@@ -46,13 +49,13 @@ def _soil_adc_to_pct(adc: float) -> float:
     pct = math.exp(SOIL_CAL_LOG_SLOPE * adc + SOIL_CAL_LOG_INTERCEPT)
     if adc < SOIL_CAL_ADC_MIN:
         logger.warning(
-            "Soil ADC %g is below the calibration range (min measured: %g → 55.99%%). "
-            "Extrapolated moisture %.1f%% may underestimate actual moisture by up to ~10%%.",
+            "Soil ADC %g is below the calibration range (min measured: %g → ~40%%). "
+            "Extrapolated moisture %.1f%% may underestimate actual moisture.",
             adc, SOIL_CAL_ADC_MIN, min(pct, 100.0),
         )
     elif adc > SOIL_CAL_ADC_MAX:
         logger.warning(
-            "Soil ADC %g is above the calibration range (max measured: %g → 18.31%%). "
+            "Soil ADC %g is above the calibration range (max measured: %g → ~5%%). "
             "Extrapolated moisture %.1f%% may underestimate actual dryness.",
             adc, SOIL_CAL_ADC_MAX, max(pct, 0.0),
         )
@@ -80,6 +83,7 @@ class SensorData:
     circulation_on: Optional[bool] = None
     water_pump_remaining_sec: Optional[int] = None
     circulation_remaining_sec: Optional[int] = None
+    target_temp_c: Optional[float] = None  # 0.0 = thermostat disabled, >0 = auto mode setpoint
 
     def to_dict(self) -> dict:
         """Convert to a plain dict for serialization."""
@@ -251,6 +255,7 @@ def _parse_sensor_json(data: dict) -> SensorData:
         circulation_on = data.get("circulation_on")
         water_pump_remaining_sec = data.get("water_pump_remaining_sec")
         circulation_remaining_sec = data.get("circulation_remaining_sec")
+        target_temp_c = data.get("target_temp_c")
 
         return SensorData(
             temperature_c=temperature_c,
@@ -270,6 +275,7 @@ def _parse_sensor_json(data: dict) -> SensorData:
             circulation_on=circulation_on,
             water_pump_remaining_sec=water_pump_remaining_sec,
             circulation_remaining_sec=circulation_remaining_sec,
+            target_temp_c=float(target_temp_c) if target_temp_c is not None else None,
         )
     except (ValueError, TypeError) as e:
         raise SensorReadError(f"Invalid sensor data types: {e}") from e
