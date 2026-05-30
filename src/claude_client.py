@@ -44,7 +44,7 @@ MAX_RETRIES = 3
 RETRY_BASE_DELAY_SEC = 2.0  # exponential backoff: 2s, 4s, 8s
 
 # Rough upper-bound pricing per 1M tokens (Sonnet-tier rates). Used for cost
-# estimation only; the actual model (CLAUDE_MODEL) may be cheaper, e.g. Haiku.
+# estimation only; the actual model (MODEL) may be cheaper, e.g. Haiku.
 _INPUT_COST_PER_M = 3.0   # USD per 1M input tokens
 _OUTPUT_COST_PER_M = 15.0  # USD per 1M output tokens
 

@@ -54,7 +54,6 @@ Fill in each variable:
 | `TELEGRAM_CHAT_ID` | Message [@userinfobot](https://t.me/userinfobot) on Telegram, it replies with your chat ID | `987654321` |
 | `FARMCTL_PATH` | Path to farmctl.py (defaults to in-repo `farmctl/farmctl.py`) | Leave unset or `/home/pi/plant-ops-ai/farmctl/farmctl.py` |
 | `SERIAL_PORT` | Arduino serial port (check with `ls /dev/ttyACM*`) | `/dev/ttyACM0` |
-| `CLAUDE_MODEL` | Which Claude model to use (Sonnet recommended) | `claude-sonnet-4-6` |
 | `DATA_DIR` | Where to store logs and cached data | `/home/pi/plant-ops-ai/data` |
 | `AGENT_MODE` | Start with `dry-run`, switch to `live` when ready | `dry-run` |
 | `WEATHER_LAT` | (Optional) Latitude for outdoor weather via Open-Meteo — no API key needed. When set, Claude sees current outdoor temp/humidity alongside your indoor sensor data. Find your coordinates at [latlong.net](https://www.latlong.net/) | `24.1477` |
@@ -412,5 +411,5 @@ The calibration was measured over ADC 390–822 (≈18–56% moisture). ADC valu
 
 - The default daily cost cap in `config/safety_limits.yaml` is $1.00/day
 - Photos are taken every 4th check by default to reduce vision API costs
-- Switch to a cheaper model by changing `CLAUDE_MODEL` in `.env`
+- Switch to a cheaper model by editing `MODEL` in `src/claude_client.py`
 - Reduce check frequency by editing the `interval=3600` value in `bot/telegram_bot.py`
