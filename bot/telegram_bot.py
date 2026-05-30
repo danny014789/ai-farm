@@ -2,7 +2,7 @@
 
 Runs as a persistent process on the Raspberry Pi. Sets up the
 python-telegram-bot Application, registers command handlers, and
-schedules hourly plant monitoring checks via APScheduler (integrated
+schedules plant monitoring checks every 2 hours via APScheduler (integrated
 through python-telegram-bot's JobQueue).
 
 Environment variables:
@@ -100,7 +100,7 @@ PHOTO_EVERY_N_CHECKS: int = 4
 async def scheduled_check(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Run the automated plant monitoring check.
 
-    Called every hour by the JobQueue. Delegates to src.plant_agent.run_check()
+    Called every 2 hours by the JobQueue. Delegates to src.plant_agent.run_check()
     which handles the full sense -> think -> act pipeline, then sends the
     summary to the authorized Telegram chat.
 
@@ -253,7 +253,7 @@ def main() -> None:
 
     Loads configuration from environment variables, builds the
     python-telegram-bot Application, registers all command handlers,
-    sets up the hourly scheduled check, and starts long-polling.
+    sets up the scheduled check (every 2h), and starts long-polling.
     """
     # Load .env file if present (for local development)
     load_dotenv()
@@ -329,12 +329,12 @@ def main() -> None:
     # Global error handler (catches Conflict, BadRequest, etc. cleanly)
     application.add_error_handler(_error_handler)
 
-    # --- Schedule hourly monitoring check and heartbeat --------------------
+    # --- Schedule monitoring check (every 2h) and heartbeat ----------------
     job_queue = application.job_queue
     if job_queue is not None:
         job_queue.run_repeating(
             scheduled_check,
-            interval=3600,    # every hour
+            interval=7200,    # every 2 hours
             first=10,         # first run 10 seconds after startup
         )
         job_queue.run_repeating(
@@ -342,7 +342,7 @@ def main() -> None:
             interval=300,     # every 5 minutes
             first=5,
         )
-        logger.info("Scheduled monitoring check registered (every 3600s)")
+        logger.info("Scheduled monitoring check registered (every 7200s)")
         logger.info("Heartbeat job registered (every 300s)")
     else:
         logger.warning(

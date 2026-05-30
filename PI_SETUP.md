@@ -111,7 +111,7 @@ python3 -m bot.telegram_bot
 The bot will:
 - Start listening for Telegram commands
 - Run the first automated check 10 seconds after startup
-- Run subsequent checks every hour
+- Run subsequent checks every 2 hours
 
 Open Telegram, find your bot, and send `/start`. Try `/status` to see live sensor readings.
 
@@ -412,4 +412,4 @@ The calibration was measured over ADC 390–822 (≈18–56% moisture). ADC valu
 - The default daily cost cap in `config/safety_limits.yaml` is $1.00/day
 - Photos are taken every 4th check by default to reduce vision API costs
 - Switch to a cheaper model by editing `MODEL` in `src/claude_client.py`
-- Reduce check frequency by editing the `interval=3600` value in `bot/telegram_bot.py`
+- Reduce check frequency by editing the `interval=7200` value in `bot/telegram_bot.py`

@@ -285,7 +285,7 @@ AGENT_MODE=dry-run python3 -m bot.telegram_bot
 
 ## Cost Estimate
 
-Using Claude Haiku 4.5 with hourly checks (24 calls/day):
+Using Claude Haiku 4.5 with checks every 2 hours (12 calls/day):
 
 | Component | Monthly Cost |
 |-----------|-------------|
