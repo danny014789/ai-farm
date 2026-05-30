@@ -67,7 +67,7 @@ plant_profile = load_plant_profile()  # species, growth stage, preferences
 
 # 3. ASK CLAUDE
 response = claude.messages.create(
-    model="claude-sonnet-4-6",  # good balance of cost/quality
+    model=MODEL,  # hardcoded in src/claude_client.py (claude-haiku-4-5)
     system=SYSTEM_PROMPT,  # plant care expert, safety rules
     messages=[
         {"role": "user", "content": [
@@ -195,7 +195,7 @@ AI Notes:
 
 ## Cost Estimation
 
-Using Claude Sonnet (recommended for cost/quality balance):
+Using Claude Haiku (fast and cost-effective):
 
 | Frequency | Input tokens | Output tokens | Monthly cost |
 |-----------|-------------|---------------|--------------|

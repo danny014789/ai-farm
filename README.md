@@ -6,7 +6,7 @@ Runs on a Raspberry Pi connected to an Arduino sensor/relay board and a Pi camer
 
 ## Features
 
-- **AI-driven plant care** -- Claude Sonnet analyzes sensor data + plant photos to decide when to water, adjust lighting, run the heater, or activate circulation
+- **AI-driven plant care** -- Claude analyzes sensor data + plant photos to decide when to water, adjust lighting, run the heater, or activate circulation
 - **Multi-action decisions** -- Claude can recommend multiple actions per check (e.g., water AND turn on the heater) and knows the current state of all actuators
 - **Natural language chat** -- talk to your plant agent in plain English via Telegram ("how's my plant?", "water it a bit", "what happened overnight?")
 - **AI operational memory** -- the agent logs observations (watering outcomes, growth milestones, patterns) and reads them back on future checks, so it learns from its own experience
@@ -250,7 +250,6 @@ rm /tmp/plant-agent-stop       # Resume
 | `TELEGRAM_CHAT_ID` | Yes | -- | Comma-separated Telegram chat IDs |
 | `FARMCTL_PATH` | No | `./farmctl/farmctl.py` | Path to farmctl.py (in-repo default) |
 | `SERIAL_PORT` | No | `/dev/ttyACM0` | Arduino serial port |
-| `CLAUDE_MODEL` | No | `claude-sonnet-4-6` | Claude model to use |
 | `DATA_DIR` | No | `./data` | Directory for logs and cached data |
 | `AGENT_MODE` | No | `dry-run` | `dry-run` (log only) or `live` (execute actions) |
 | `WEATHER_LAT` | No | -- | Latitude for outdoor weather (Open-Meteo, no API key needed) |
@@ -286,7 +285,7 @@ AGENT_MODE=dry-run python3 -m bot.telegram_bot
 
 ## Cost Estimate
 
-Using Claude Sonnet 4.6 with hourly checks (24 calls/day):
+Using Claude Haiku 4.5 with hourly checks (24 calls/day):
 
 | Component | Monthly Cost |
 |-----------|-------------|

@@ -6,10 +6,9 @@ Provides two main capabilities:
 2. ``research_plant`` -- asks Claude to produce a comprehensive growing guide
    for a given plant species, used for one-time knowledge caching.
 
-Configuration is driven by environment variables:
-- ANTHROPIC_API_KEY (required)
-- CLAUDE_MODEL (the source of truth for which model to use; falls back to
-  DEFAULT_MODEL only when unset)
+Configuration:
+- ANTHROPIC_API_KEY (required, from environment)
+- The Claude model is hardcoded as MODEL below (intentionally not env-configurable).
 """
 
 from __future__ import annotations
@@ -36,7 +35,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-DEFAULT_MODEL = "claude-sonnet-4-6"
+# Single source of truth for the Claude model. Intentionally not env-configurable.
+MODEL = "claude-haiku-4-5"
 MAX_DECISION_TOKENS = 3000
 MAX_CHAT_TOKENS = 3000
 MAX_RESEARCH_TOKENS = 4096
@@ -104,11 +104,6 @@ def _get_client() -> anthropic.Anthropic:
             "Set it in your .env file or export it in your shell."
         )
     return anthropic.Anthropic(api_key=api_key)
-
-
-def _get_model() -> str:
-    """Return the Claude model to use, from env or default."""
-    return os.environ.get("CLAUDE_MODEL", DEFAULT_MODEL)
 
 
 def _call_with_retry(
@@ -320,7 +315,7 @@ def get_plant_decision(
         anthropic.APIConnectionError: If the API is unreachable after retries.
     """
     client = _get_client()
-    model = _get_model()
+    model = MODEL
 
     current_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
@@ -456,7 +451,7 @@ def get_chat_response(
         anthropic.APIConnectionError: If the API is unreachable after retries.
     """
     client = _get_client()
-    model = _get_model()
+    model = MODEL
 
     current_time = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
@@ -541,7 +536,7 @@ def research_plant(
         anthropic.APIConnectionError: If the API is unreachable after retries.
     """
     client = _get_client()
-    model = _get_model()
+    model = MODEL
 
     user_prompt = build_research_prompt(plant_name, variety, growth_stage)
 

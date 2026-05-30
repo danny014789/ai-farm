@@ -167,11 +167,11 @@ class TestFarmctlFieldMapping:
 
     def test_soil_raw_wet_end_exponential(self):
         """Low ADC (wet soil) returns a high moisture % via the exponential formula."""
-        # moisture = exp(-0.006649 * 300 + 5.8236) = exp(3.8289) ≈ 46.1 %
+        # moisture = exp(-0.006649 * 300 + 5.8236) = exp(3.8289) ≈ 46.0 %
         data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
                 "light_raw": 500, "soil_raw": 300}
         result = _parse_sensor_json(data)
-        assert result.soil_moisture_pct == 46.1
+        assert result.soil_moisture_pct == 46.0
 
     def test_soil_moisture_pct_passes_through(self):
         """If soil_moisture_pct is already 0-100, it should not be converted."""
