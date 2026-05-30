@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 # Defaults
 # ---------------------------------------------------------------------------
 DEFAULT_MODEL = "claude-sonnet-4-6"
-MAX_DECISION_TOKENS = 1536
-MAX_CHAT_TOKENS = 1536
+MAX_DECISION_TOKENS = 3000
+MAX_CHAT_TOKENS = 3000
 MAX_RESEARCH_TOKENS = 4096
 MAX_RETRIES = 3
 RETRY_BASE_DELAY_SEC = 2.0  # exponential backoff: 2s, 4s, 8s
@@ -168,11 +168,62 @@ def _call_with_retry(
     raise last_exc  # type: ignore[misc]
 
 
+def _repair_truncated_json(text: str) -> dict[str, Any] | None:
+    """Best-effort recovery from a response truncated mid-string.
+
+    When Claude hits max_tokens partway through a value, the JSON is
+    unparseable but the leading fields (assessment, actions, urgency, ...)
+    are usually complete. This walks the text tracking brace/bracket depth
+    while ignoring string contents, finds the last comma at top-level depth,
+    truncates after it, and closes the outer object. The recovered dict
+    preserves whatever complete top-level keys came before the cutoff.
+
+    Returns None if no safe recovery point is found.
+    """
+    in_string = False
+    escape = False
+    depth = 0
+    first_open = -1
+    last_safe_pos = -1
+
+    for i, c in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            continue
+        if c == '"':
+            in_string = True
+        elif c in "{[":
+            if first_open == -1:
+                first_open = i
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+        elif c == "," and depth == 1:
+            last_safe_pos = i
+
+    if first_open == -1 or last_safe_pos <= first_open:
+        return None
+
+    candidate = text[first_open:last_safe_pos] + "}"
+    try:
+        result = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return result if isinstance(result, dict) else None
+
+
 def _extract_json(text: str) -> dict[str, Any]:
     """Extract a JSON object from Claude's response text.
 
     Handles cases where Claude wraps JSON in markdown code fences
-    despite being told not to.
+    despite being told not to. Also attempts best-effort recovery
+    when the response is truncated mid-string (max_tokens cutoff).
 
     Args:
         text: Raw response text from Claude.
@@ -200,7 +251,7 @@ def _extract_json(text: str) -> dict[str, Any]:
             return result
         raise ValueError(f"Expected JSON object, got {type(result).__name__}")
     except json.JSONDecodeError as exc:
-        # Last resort: try to find a JSON object in the text
+        # Try to find a JSON object in the text (in case of leading/trailing junk)
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start != -1 and end != -1 and end > start:
@@ -208,6 +259,19 @@ def _extract_json(text: str) -> dict[str, Any]:
                 return json.loads(cleaned[start : end + 1])
             except json.JSONDecodeError:
                 pass
+
+        # Recovery path: truncated mid-string (likely max_tokens hit).
+        # Keep the complete top-level keys that came before the cutoff.
+        repaired = _repair_truncated_json(cleaned)
+        if repaired is not None:
+            logger.warning(
+                "Recovered truncated JSON response (likely max_tokens hit): "
+                "kept %d top-level keys: %s",
+                len(repaired),
+                list(repaired.keys()),
+            )
+            return repaired
+
         raise ValueError(
             f"Failed to parse JSON from Claude response: {exc}. "
             f"Raw text (first 500 chars): {text[:500]}"
