@@ -151,27 +151,27 @@ class TestFarmctlFieldMapping:
 
     def test_soil_raw_dry_end_exponential(self):
         """ADC 1023 (fully dry) uses the exponential formula — does not clamp to 0."""
-        # moisture = exp(-0.00258653 * 1023 + 4.91733458) = exp(2.27111) ≈ 9.7 %
+        # moisture = exp(-0.006649 * 1023 + 5.8236) = exp(-0.978) ≈ 0.4 %
         data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
                 "light_raw": 500, "soil_raw": 1023}
         result = _parse_sensor_json(data)
-        assert result.soil_moisture_pct == 9.7
+        assert result.soil_moisture_pct == 0.4
 
     def test_soil_raw_exponential_formula_mid_range(self):
         """Mid-range ADC follows the exponential calibration formula."""
-        # moisture = exp(-0.00258653 * 500 + 4.91733458) = exp(3.62406) ≈ 37.5 %
+        # moisture = exp(-0.006649 * 500 + 5.8236) = exp(2.5011) ≈ 12.2 %
         data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
                 "light_raw": 500, "soil_raw": 500}
         result = _parse_sensor_json(data)
-        assert result.soil_moisture_pct == 37.5
+        assert result.soil_moisture_pct == 12.2
 
     def test_soil_raw_wet_end_exponential(self):
         """Low ADC (wet soil) returns a high moisture % via the exponential formula."""
-        # moisture = exp(-0.00258653 * 300 + 4.91733458) = exp(4.14137) ≈ 62.9 %
+        # moisture = exp(-0.006649 * 300 + 5.8236) = exp(3.8289) ≈ 46.1 %
         data = {"temp_c": 25.0, "humidity_pct": 60.0, "co2_ppm": 400,
                 "light_raw": 500, "soil_raw": 300}
         result = _parse_sensor_json(data)
-        assert result.soil_moisture_pct == 62.9
+        assert result.soil_moisture_pct == 46.1
 
     def test_soil_moisture_pct_passes_through(self):
         """If soil_moisture_pct is already 0-100, it should not be converted."""
@@ -296,6 +296,7 @@ class TestSensorDataToDict:
             "circulation_on",
             "water_pump_remaining_sec",
             "circulation_remaining_sec",
+            "target_temp_c",
         }
         assert set(d.keys()) == expected_keys
 

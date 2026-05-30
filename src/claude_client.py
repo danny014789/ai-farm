@@ -8,7 +8,8 @@ Provides two main capabilities:
 
 Configuration is driven by environment variables:
 - ANTHROPIC_API_KEY (required)
-- CLAUDE_MODEL (optional, defaults to claude-sonnet-4-20250514)
+- CLAUDE_MODEL (the source of truth for which model to use; falls back to
+  DEFAULT_MODEL only when unset)
 """
 
 from __future__ import annotations
@@ -42,7 +43,8 @@ MAX_RESEARCH_TOKENS = 4096
 MAX_RETRIES = 3
 RETRY_BASE_DELAY_SEC = 2.0  # exponential backoff: 2s, 4s, 8s
 
-# Approximate pricing per 1M tokens (Sonnet). Used for cost estimation only.
+# Rough upper-bound pricing per 1M tokens (Sonnet-tier rates). Used for cost
+# estimation only; the actual model (CLAUDE_MODEL) may be cheaper, e.g. Haiku.
 _INPUT_COST_PER_M = 3.0   # USD per 1M input tokens
 _OUTPUT_COST_PER_M = 15.0  # USD per 1M output tokens
 
@@ -66,7 +68,7 @@ class TokenUsageTracker:
 
     @property
     def estimated_cost_usd(self) -> float:
-        """Rough cost estimate based on public Sonnet pricing."""
+        """Rough cost estimate (upper bound, Sonnet-tier pricing)."""
         input_cost = (self.total_input_tokens / 1_000_000) * _INPUT_COST_PER_M
         output_cost = (self.total_output_tokens / 1_000_000) * _OUTPUT_COST_PER_M
         return input_cost + output_cost
