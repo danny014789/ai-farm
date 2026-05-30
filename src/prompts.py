@@ -34,19 +34,19 @@ VALID_URGENCIES = ("normal", "attention", "critical")
 # ---------------------------------------------------------------------------
 _RESPONSE_SCHEMA = """\
 {
-  "assessment": "Brief plant health assessment (1-2 sentences)",
+  "assessment": "Plant health in one short sentence (max ~15 words)",
   "actions": [
     {
       "action": "water|light_on|light_off|heater_on|heater_off|circulation|do_nothing",
       "params": {"duration_sec": <int, required for water and circulation, omit for others>},
-      "reason": "Why this specific action is needed"
+      "reason": "Why, one short phrase (max ~10 words)"
     }
   ],
   "urgency": "normal|attention|critical",
   "notify_human": <true|false>,
-  "notes": "Any additional observations, concerns, or recommendations",
-  "message": "A natural, conversational summary for the human caretaker. 2-4 sentences.",
-  "observations": ["noteworthy observations to remember for future checks"],
+  "notes": "Empty string \"\" unless there is a genuinely important concern NOT already in message; then one short sentence max",
+  "message": "Short status for the human, read on a phone. 1-2 sentences, max ~200 characters.",
+  "observations": ["0-2 short notes worth remembering, each max ~10 words; empty list [] if nothing new"],
   "knowledge_update": "significant learning to append to knowledge doc, or null",
   "hardware_update": {"section.key": "new_value"} or null
 }"""
@@ -171,10 +171,10 @@ You may recommend one or more actions per evaluation. Choose from:
 9. The "Current Actuator States" section reflects the actual hardware relay states. Use it to know what is currently on or off — do not guess from sensor values alone.
 
 ## Operational Memory
-You have a plant log where past observations are recorded. Use it to track patterns \
-(watering effectiveness, drying rates), note growth milestones, record calibration \
-insights. Write observations in the "observations" array. Use "knowledge_update" for \
-significant discoveries worth adding to the knowledge document.
+Past observations are recorded in a plant log to track patterns over time. Add only \
+genuinely new, useful notes to the "observations" array (0-2 items, each a short phrase) — \
+do NOT restate current sensor values or anything already obvious. Use "knowledge_update" \
+for significant discoveries worth adding to the knowledge document.
 
 ## Hardware Profile Updates
 You can update the hardware profile (pump flow rate, pot size, sensor calibration, etc.) \
@@ -183,10 +183,13 @@ by including a "hardware_update" dict in your response. Use dot-notation keys li
 the configured values don't match reality (e.g. watering 5s raised soil moisture more \
 than expected given the configured flow rate).
 
-## Human Communication
-The "message" field is sent to the plant owner via Telegram. Write a brief, friendly \
-status update with context: comparison with recent readings, effect of recent actions, \
-growth progress. Keep under 500 characters.
+## Communication Style — BE BRIEF
+Your output is read on a phone. Be terse and only mention what matters right now.
+- "message": 1-2 short sentences, max ~200 characters. Lead with what changed or what you did.
+- Say each point ONCE. Never repeat the same fact across "message", "notes", and "observations".
+- No pleasantries, no background recap, no multi-step recovery plans unless the situation is truly critical.
+- "notes" should usually be an empty string; fill it only for an important concern not already in "message".
+The "message" field is sent to the plant owner via Telegram.
 
 ## Response Format
 Respond with ONLY a valid JSON object. No markdown fences, no extra text, no explanation outside the JSON.
