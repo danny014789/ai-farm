@@ -62,6 +62,7 @@ def build_system_prompt(
     plant_knowledge: str,
     hardware_profile: dict[str, Any] | None = None,
     light_schedule: dict[str, Any] | None = None,
+    compact_knowledge: bool = True,
 ) -> str:
     """Build the system prompt that defines Claude's role and constraints.
 
@@ -98,11 +99,16 @@ def build_system_prompt(
     # Optionally include plant knowledge research
     knowledge_section = ""
     if plant_knowledge and plant_knowledge.strip():
+        kb = (
+            _compact_plant_knowledge(plant_knowledge)
+            if compact_knowledge
+            else plant_knowledge.strip()
+        )
         knowledge_section = (
             "\n\n## Researched Plant Knowledge\n"
-            "The following information was researched specifically for this plant. "
-            "Use it as your primary reference for care decisions.\n\n"
-            f"{plant_knowledge.strip()}\n"
+            "Key researched reference values for this plant. "
+            "Use them as your primary reference for care decisions.\n\n"
+            f"{kb}\n"
         )
 
     # Hardware profile section
@@ -686,6 +692,33 @@ def _compute_light_cycle_section(
         f"- Configured: on after {schedule_on}, run for {light_hours}h per cycle"
     )
     return "\n".join(lines)
+
+
+def _compact_plant_knowledge(knowledge: str, max_chars: int = 1400) -> str:
+    """Return a condensed slice of the researched knowledge doc for routine checks.
+
+    The full guide is long prose researched once per plant. For scheduled
+    decisions the numeric ranges (the "Summary Table" section) carry almost all
+    the decision-relevant signal, so we keep the doc's title line plus that
+    section and drop the surrounding prose. Chat mode still uses the full text.
+    Falls back to a plain truncation when no summary table is present or the
+    doc is already short.
+    """
+    text = knowledge.strip()
+    if len(text) <= max_chars:
+        return text
+
+    lower = text.lower()
+    idx = lower.find("summary table")
+    if idx != -1:
+        # Back up to the start of that section's heading line.
+        head_start = text.rfind("\n#", 0, idx)
+        section = text[head_start:].strip() if head_start != -1 else text[idx:]
+        first_line = text.split("\n", 1)[0].strip()
+        compact = f"{first_line}\n\n{section}".strip()
+        return compact if len(compact) <= max_chars else compact[:max_chars].rstrip()
+
+    return text[:max_chars].rstrip()
 
 
 def _format_hardware_profile(hw: dict[str, Any]) -> str:

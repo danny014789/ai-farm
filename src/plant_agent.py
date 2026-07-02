@@ -163,7 +163,7 @@ def run_check(
 
     # --- 4. Load actuator state (reconciled with hardware) and plant log ---
     actuator_state = reconcile_actuator_state(sensor_data.to_dict(), data_dir)
-    plant_log = load_recent_plant_log(20, data_dir)
+    plant_log = load_recent_plant_log(6, data_dir)
 
     # --- 5. Ask Claude for decision ---
     decision = None
@@ -172,7 +172,9 @@ def run_check(
             sensor_data=sensor_data.to_dict(),
             plant_profile=profile,
             plant_knowledge=plant_knowledge,
-            history=history,
+            # Claude only needs recent context; safety/rate-limits below still
+            # use the full `history` list (see execute_validated_actions).
+            history=history[-6:],
             photo_path=photo_path,
             actuator_state=actuator_state,
             plant_log=plant_log,

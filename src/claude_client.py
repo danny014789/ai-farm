@@ -37,16 +37,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Single source of truth for the Claude model. Intentionally not env-configurable.
 MODEL = "claude-haiku-4-5"
-MAX_DECISION_TOKENS = 3000
-MAX_CHAT_TOKENS = 3000
-MAX_RESEARCH_TOKENS = 4096
+MAX_DECISION_TOKENS = 1000  # decisions are small JSON; cap runaway output
+MAX_CHAT_TOKENS = 1200
+MAX_RESEARCH_TOKENS = 4096  # one-time per plant; cached to disk
 MAX_RETRIES = 3
 RETRY_BASE_DELAY_SEC = 2.0  # exponential backoff: 2s, 4s, 8s
 
-# Rough upper-bound pricing per 1M tokens (Sonnet-tier rates). Used for cost
-# estimation only; the actual model (MODEL) may be cheaper, e.g. Haiku.
-_INPUT_COST_PER_M = 3.0   # USD per 1M input tokens
-_OUTPUT_COST_PER_M = 15.0  # USD per 1M output tokens
+# Pricing per 1M tokens for MODEL (claude-haiku-4-5). Used for cost estimation
+# only. Keep in sync with MODEL if the model ever changes.
+_INPUT_COST_PER_M = 1.0   # USD per 1M input tokens
+_OUTPUT_COST_PER_M = 5.0  # USD per 1M output tokens
 
 
 # ---------------------------------------------------------------------------
