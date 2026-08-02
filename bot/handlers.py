@@ -10,6 +10,7 @@ This module does NOT import the bot module to avoid circular imports.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
@@ -169,6 +170,11 @@ def _format_sensor_data(data: SensorData) -> str:
         if data.heater_lockout:
             heater_str += " (LOCKOUT)"
         lines.append(f"Heater:  {heater_str}")
+    if data.target_temp_c is not None:
+        if data.target_temp_c > 0:
+            lines.append(f"Thermostat:  {data.target_temp_c:.1f} C (AUTO)")
+        else:
+            lines.append(f"Thermostat:  OFF (manual)")
     if data.water_pump_on and data.water_pump_remaining_sec:
         lines.append(f"Water pump:  ON ({data.water_pump_remaining_sec}s remaining)")
     if data.circulation_on and data.circulation_remaining_sec:
@@ -214,7 +220,8 @@ async def start_command(
         "/photo   - Take a plant photo\n"
         "/water   - Manual watering\n"
         "/light   - Light on/off\n"
-        "/heater  - Heater on/off\n"
+        "/heater  - Heater on/off (manual)\n"
+        "/settemp - Set greenhouse target temperature\n"
         "/profile - Plant profile & ideal conditions\n"
         "/help    - Full command list\n"
     )
@@ -237,7 +244,9 @@ async def help_command(
         "Manual control:\n"
         "  /water [sec]     - Water (default 5s, max 30s)\n"
         "  /light on|off    - Light control\n"
-        "  /heater on|off   - Heater control\n"
+        "  /heater on|off   - Heater manual on/off (disables thermostat)\n"
+        "  /settemp <C>     - Set greenhouse target temp (e.g. /settemp 25)\n"
+        "  /settemp off     - Disable thermostat (manual heater mode)\n"
         "  /circulation [s] - Circulation fan (default 60s, max 3600s)\n\n"
         "Configuration:\n"
         "  /setplant <name> - Set plant species\n"
@@ -383,6 +392,54 @@ async def heater_command(
     await update.message.reply_text(
         f"Turn heater {state.upper()}?",
         reply_markup=confirm_action_keyboard(action_name),
+    )
+
+
+@authorized_only
+async def settemp_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /settemp <C> | off - set or disable the greenhouse thermostat.
+
+    Examples:
+      /settemp 25    -> maintain 25 °C (Arduino auto mode)
+      /settemp 25.5  -> fractional degrees accepted
+      /settemp off   -> disable thermostat (manual heater control)
+    """
+    args = context.args or []
+    if not args:
+        await update.message.reply_text(
+            "Usage: /settemp <celsius>  (e.g. /settemp 25)\n"
+            "       /settemp off        (disable thermostat)"
+        )
+        return
+
+    raw = args[0].lower()
+    if raw == "off":
+        temp_c = 0.0
+        label = "off (manual mode)"
+    else:
+        try:
+            temp_c = float(raw)
+        except ValueError:
+            await update.message.reply_text(
+                "Invalid temperature. Use a number (e.g. /settemp 25) or 'off'."
+            )
+            return
+        if temp_c <= 0 or temp_c >= 40:
+            await update.message.reply_text(
+                "Temperature must be between 1 and 39 °C (Arduino overtemp limit is 40 °C)."
+            )
+            return
+        label = f"{temp_c:.1f} °C"
+
+    context.user_data["pending_action"] = {
+        "action": "set_greenhouse_temp",
+        "params": {"temp_c": temp_c},
+    }
+    await update.message.reply_text(
+        f"Set greenhouse thermostat to {label}?",
+        reply_markup=confirm_action_keyboard(f"set_greenhouse_temp_{temp_c}"),
     )
 
 
@@ -789,74 +846,29 @@ async def _research_plant(
     plant_name: str,
     stage: str,
 ) -> None:
-    """Use the Anthropic API to research optimal conditions for a plant.
+    """Research optimal conditions for a plant and cache the result.
 
-    Results are saved to data/plant_knowledge.md and ideal conditions
-    are updated in plant_profile.yaml.
+    Delegates to ``ensure_plant_knowledge``, which writes
+    data/plant_knowledge.md and updates ideal_conditions in
+    plant_profile.yaml. That path already handles model selection, retries,
+    and token accounting, so this handler only deals with Telegram replies.
+
+    The underlying call is synchronous and network-bound, so it runs in a
+    worker thread to keep the bot's event loop responsive.
     """
-    api_key = _bot_data(context, "anthropic_api_key")
-    if not api_key:
+    if not _bot_data(context, "anthropic_api_key"):
         await query.message.reply_text(
             "ANTHROPIC_API_KEY not configured. Cannot research plant."
         )
         return
 
     try:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=api_key)
-
-        prompt = (
-            f"I am growing {plant_name} (currently in the {stage} stage) "
-            f"indoors with artificial lighting, temperature control, and "
-            f"automated watering.\n\n"
-            f"Please provide:\n"
-            f"1. Ideal temperature range (min/max in Celsius)\n"
-            f"2. Ideal humidity range (min/max percentage)\n"
-            f"3. Ideal soil moisture range (min/max percentage)\n"
-            f"4. Recommended light hours per day for {stage} stage\n"
-            f"5. Minimum CO2 ppm\n"
-            f"6. Key care tips for {stage} stage\n"
-            f"7. Common problems to watch for\n\n"
-            f"Format the numerical values as JSON on a single line at the "
-            f"end, like:\n"
-            f'IDEAL_JSON: {{"temp_min_c": 20, "temp_max_c": 28, '
-            f'"humidity_min_pct": 50, "humidity_max_pct": 70, '
-            f'"soil_moisture_min_pct": 40, "soil_moisture_max_pct": 60, '
-            f'"light_hours": 16, "co2_min_ppm": 400}}'
+        await asyncio.to_thread(
+            ensure_plant_knowledge,
+            load_plant_profile(),
+            str(_data_dir(context)),
+            force=True,
         )
-
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        content = response.content[0].text
-
-        # Save full research as knowledge file
-        knowledge_path = _data_dir(context) / "plant_knowledge.md"
-        knowledge_path.parent.mkdir(parents=True, exist_ok=True)
-        knowledge_path.write_text(
-            f"# {plant_name} - {stage} stage\n\n"
-            f"Researched: {datetime.now().astimezone().isoformat()}\n\n"
-            f"{content}\n"
-        )
-
-        # Try to extract and save ideal conditions JSON
-        if "IDEAL_JSON:" in content:
-            json_str = content.split("IDEAL_JSON:", 1)[1].strip()
-            # Handle case where there's text after the JSON
-            if "\n" in json_str:
-                json_str = json_str.split("\n", 1)[0]
-            try:
-                ideal = json.loads(json_str)
-                profile = load_plant_profile()
-                profile["ideal_conditions"] = ideal
-                profile["knowledge_cached"] = True
-                save_plant_profile(profile)
-            except json.JSONDecodeError:
-                logger.warning("Could not parse ideal conditions JSON")
 
         await query.message.reply_text(
             f"Research complete for {plant_name} ({stage}).\n"

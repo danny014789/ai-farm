@@ -8,7 +8,14 @@ Provides two main capabilities:
 
 Configuration is driven by environment variables:
 - ANTHROPIC_API_KEY (required)
-- CLAUDE_MODEL (optional, defaults to claude-sonnet-4-20250514)
+- CLAUDE_MODEL (optional -- pins an exact model ID and skips auto-resolution)
+
+If CLAUDE_MODEL is unset, the model is resolved once per process against the
+Models API: the newest model belonging to an allowed tier (see
+MODEL_TIER_PREFERENCE). Anthropic publishes no "-latest" alias, so this is the
+only way to pick up new releases without a code change. The tier allowlist is
+deliberate -- it keeps the bot from silently jumping onto a pricier or
+API-incompatible tier. DEFAULT_MODEL is the fallback if resolution fails.
 """
 
 from __future__ import annotations
@@ -35,16 +42,36 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-DEFAULT_MODEL = "claude-sonnet-4-6"
+# Fallback when auto-resolution is unavailable (no network, API error, or an
+# empty allowlist match). Also the floor: resolution never picks something
+# older than this.
+DEFAULT_MODEL = "claude-opus-4-8"
+
+# Model-ID prefixes this bot is willing to run on, best tier first. Auto-
+# resolution walks these in order and takes the newest model in the first tier
+# that matches. Opus and Sonnet have held a stable request surface across
+# releases; Fable/Mythos tiers are excluded because they cost several times
+# more and change API rules (e.g. they reject an explicit disabled-thinking
+# config), and Haiku is excluded as a quality downgrade for research.
+MODEL_TIER_PREFERENCE = ("claude-opus-", "claude-sonnet-")
+
 MAX_DECISION_TOKENS = 3000
 MAX_CHAT_TOKENS = 3000
 MAX_RESEARCH_TOKENS = 4096
 MAX_RETRIES = 3
 RETRY_BASE_DELAY_SEC = 2.0  # exponential backoff: 2s, 4s, 8s
 
-# Approximate pricing per 1M tokens (Sonnet). Used for cost estimation only.
-_INPUT_COST_PER_M = 3.0   # USD per 1M input tokens
-_OUTPUT_COST_PER_M = 15.0  # USD per 1M output tokens
+# Approximate published pricing per 1M tokens, by model-ID prefix, for cost
+# logging only. Longest matching prefix wins. Rates drift -- treat the logged
+# figure as an order-of-magnitude estimate, not a bill.
+_MODEL_RATES_PER_M: dict[str, tuple[float, float]] = {
+    "claude-opus-": (5.0, 25.0),
+    "claude-sonnet-": (3.0, 15.0),
+    "claude-haiku-": (1.0, 5.0),
+    "claude-fable-": (10.0, 50.0),
+    "claude-mythos-": (10.0, 50.0),
+}
+_FALLBACK_RATES_PER_M = (5.0, 25.0)  # matches DEFAULT_MODEL's tier
 
 
 # ---------------------------------------------------------------------------
@@ -66,9 +93,10 @@ class TokenUsageTracker:
 
     @property
     def estimated_cost_usd(self) -> float:
-        """Rough cost estimate based on public Sonnet pricing."""
-        input_cost = (self.total_input_tokens / 1_000_000) * _INPUT_COST_PER_M
-        output_cost = (self.total_output_tokens / 1_000_000) * _OUTPUT_COST_PER_M
+        """Rough cost estimate using the active model's published rates."""
+        input_rate, output_rate = _model_rates(_get_model())
+        input_cost = (self.total_input_tokens / 1_000_000) * input_rate
+        output_cost = (self.total_output_tokens / 1_000_000) * output_rate
         return input_cost + output_cost
 
     def summary(self) -> dict[str, Any]:
@@ -104,9 +132,73 @@ def _get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
+def _model_rates(model_id: str) -> tuple[float, float]:
+    """Return (input, output) USD-per-1M-token rates for *model_id*."""
+    for prefix in sorted(_MODEL_RATES_PER_M, key=len, reverse=True):
+        if model_id.startswith(prefix):
+            return _MODEL_RATES_PER_M[prefix]
+    return _FALLBACK_RATES_PER_M
+
+
+def _resolve_latest_model() -> str:
+    """Pick the newest model from the highest-priority allowed tier.
+
+    Queries the Models API once. Any failure -- no API key, no network, an
+    unexpected response shape -- falls back to DEFAULT_MODEL rather than
+    raising, so a transient outage degrades the model choice instead of
+    breaking plant research entirely.
+    """
+    try:
+        models = list(_get_client().models.list())
+    except Exception:
+        logger.warning(
+            "Could not reach the Models API; falling back to %s",
+            DEFAULT_MODEL,
+            exc_info=True,
+        )
+        return DEFAULT_MODEL
+
+    for prefix in MODEL_TIER_PREFERENCE:
+        tier = [m for m in models if m.id.startswith(prefix)]
+        if not tier:
+            continue
+        # created_at is homogeneous across the response (all str or all
+        # datetime), so str() gives a consistent, correctly-ordered key.
+        newest = max(tier, key=lambda m: str(m.created_at))
+        logger.info(
+            "Resolved Claude model to %s (newest in tier '%s', %d candidates)",
+            newest.id,
+            prefix,
+            len(tier),
+        )
+        return newest.id
+
+    logger.warning(
+        "No model matched the tier allowlist %s; falling back to %s",
+        MODEL_TIER_PREFERENCE,
+        DEFAULT_MODEL,
+    )
+    return DEFAULT_MODEL
+
+
+# Resolved once per process -- the Models API is not called per request.
+_resolved_model: str | None = None
+
+
 def _get_model() -> str:
-    """Return the Claude model to use, from env or default."""
-    return os.environ.get("CLAUDE_MODEL", DEFAULT_MODEL)
+    """Return the Claude model to use.
+
+    An explicit CLAUDE_MODEL always wins and skips the Models API entirely.
+    Otherwise the model is auto-resolved once and cached for the process.
+    """
+    pinned = os.environ.get("CLAUDE_MODEL")
+    if pinned:
+        return pinned
+
+    global _resolved_model
+    if _resolved_model is None:
+        _resolved_model = _resolve_latest_model()
+    return _resolved_model
 
 
 def _call_with_retry(
