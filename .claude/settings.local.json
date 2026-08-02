@@ -17,7 +17,8 @@
       "Bash(python3:*)",
       "Bash(pip3 show:*)",
       "Bash(pip install:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(wc:*)"
     ]
   }
 }
