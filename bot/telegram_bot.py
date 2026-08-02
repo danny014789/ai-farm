@@ -51,6 +51,7 @@ from bot.handlers import (
     restart_command,
     resume_command,
     setplant_command,
+    settemp_command,
     start_command,
     status_command,
     water_command,
@@ -309,6 +310,7 @@ def main() -> None:
     application.add_handler(CommandHandler("water", water_command))
     application.add_handler(CommandHandler("light", light_command))
     application.add_handler(CommandHandler("heater", heater_command))
+    application.add_handler(CommandHandler("settemp", settemp_command))
     application.add_handler(CommandHandler("circulation", circulation_command))
     application.add_handler(CommandHandler("setplant", setplant_command))
     application.add_handler(CommandHandler("profile", profile_command))

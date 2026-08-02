@@ -20,6 +20,13 @@ const float HEATER_TRIP_C  = 40.0f;
 const float HEATER_RESET_C = 39.0f;
 bool heaterLockout = false;
 
+// ---- Greenhouse thermostat (auto mode) ----
+// targetTempC == 0 means manual mode (heater controlled by hon/hoff).
+// Any positive value enables auto mode: heater turns on/off to hold that temp.
+const float HEATER_HYST_C = 0.5f;   // hysteresis band (°C)
+float targetTempC = 0.0f;
+bool  heaterAutoMode = false;
+
 // ---- SCD41 stale-data watchdog ----
 const unsigned long SCD_STALE_MS = 30000;   // 30s without new data => recover
 const unsigned long RECOVER_BACKOFF_MS = 15000; // don’t spam recover attempts
@@ -108,6 +115,7 @@ void serviceHeaterSafety() {
 
   float t = latestAir.temp;
 
+  // --- Overtemp lockout (always takes priority) ---
   if (!heaterLockout && t > HEATER_TRIP_C) {
     heaterLockout = true;
     if (heaterRelayOn) setHeaterRelay(false);
@@ -120,6 +128,15 @@ void serviceHeaterSafety() {
   }
 
   if (heaterLockout && heaterRelayOn) setHeaterRelay(false);
+
+  // --- Thermostat auto mode ---
+  if (heaterAutoMode && !heaterLockout) {
+    if (!heaterRelayOn && t < (targetTempC - HEATER_HYST_C)) {
+      setHeaterRelay(true);
+    } else if (heaterRelayOn && t >= targetTempC) {
+      setHeaterRelay(false);
+    }
+  }
 }
 
 // ---------- SCD41 recovery ----------
@@ -157,10 +174,12 @@ void recoverSCD41() {
 // ---------- Output ----------
 void printHelp() {
   Serial.println("Commands:");
-  Serial.println("  r / read             -> CSV: co2,tempC,rh,lightRaw,soilRaw,waterOK,lightOn,heaterOn,heaterLockout,waterOn,circOn,waterRem,circRem");
+  Serial.println("  r / read             -> CSV: co2,tempC,rh,lightRaw,soilRaw,waterOK,lightOn,heaterOn,heaterLockout,waterOn,circOn,waterRem,circRem,targetTempC");
   Serial.println("  p                    -> pretty print latest data");
   Serial.println("  lon / loff           -> light relay ON/OFF");
-  Serial.println("  hon / hoff           -> heater relay ON/OFF (blocked if lockout or sensor stale)");
+  Serial.println("  hon / hoff           -> heater relay ON/OFF (manual mode; disables thermostat)");
+  Serial.println("  h_temp,TEMP          -> set greenhouse target temp in C (e.g. h_temp,25.0) - enables auto thermostat");
+  Serial.println("  h_temp,0             -> disable thermostat (return to manual heater mode)");
   Serial.println("  w_on,SEC / w_off     -> water pump ON for SEC / OFF");
   Serial.println("  c_on,SEC / c_off     -> circulation ON for SEC / OFF");
   Serial.println("  t?                   -> remaining time for timed relays");
@@ -182,7 +201,8 @@ void printCSV() {
   Serial.print(waterRelay.isOn ? 1 : 0); Serial.print(",");
   Serial.print(circRelay.isOn ? 1 : 0); Serial.print(",");
   Serial.print(secondsRemaining(waterRelay)); Serial.print(",");
-  Serial.println(secondsRemaining(circRelay));
+  Serial.print(secondsRemaining(circRelay)); Serial.print(",");
+  Serial.println(targetTempC, 2);
 }
 
 void printPretty() {
@@ -204,6 +224,12 @@ void printPretty() {
 
   Serial.print("Relay Circ:   "); Serial.print(circRelay.isOn ? "ON" : "OFF");
   Serial.print("  remaining(s): "); Serial.println(secondsRemaining(circRelay));
+
+  if (heaterAutoMode) {
+    Serial.print("Thermostat target: "); Serial.print(targetTempC, 1); Serial.println(" C (AUTO)");
+  } else {
+    Serial.println("Thermostat: OFF (manual mode)");
+  }
 
   Serial.print("SCD last update(ms ago): ");
   Serial.println(hasAir ? (long)(millis() - lastSCDms) : -1);
@@ -255,10 +281,36 @@ void handleCommand(const char* in) {
       Serial.println("Heater ON blocked: overtemp lockout active.");
       return;
     }
-    setHeaterRelay(true); Serial.println("Heater relay ON"); return;
+    // Manual ON disables thermostat auto mode
+    heaterAutoMode = false;
+    targetTempC = 0.0f;
+    setHeaterRelay(true); Serial.println("Heater relay ON (manual)"); return;
   }
   if (strcmp(tmp, "hoff") == 0 || strcmp(tmp, "heater off") == 0) {
-    setHeaterRelay(false); Serial.println("Heater relay OFF"); return;
+    // Manual OFF disables thermostat auto mode
+    heaterAutoMode = false;
+    targetTempC = 0.0f;
+    setHeaterRelay(false); Serial.println("Heater relay OFF (manual)"); return;
+  }
+
+  if (strncmp(tmp, "h_temp", 6) == 0) {
+    // h_temp,<value>  -- set target greenhouse temperature
+    // h_temp,0 or h_temp,0.0 disables auto mode
+    const char* p = strchr(in, ',');
+    if (!p) { Serial.println("Usage: h_temp,<celsius>  (e.g. h_temp,25.0)"); return; }
+    float t = (float)atof(p + 1);
+    if (t <= 0.0f) {
+      heaterAutoMode = false;
+      targetTempC = 0.0f;
+      Serial.println("Thermostat disabled (manual mode).");
+    } else if (t >= HEATER_TRIP_C) {
+      Serial.print("Target temp rejected: must be below "); Serial.print(HEATER_TRIP_C, 0); Serial.println(" C.");
+    } else {
+      targetTempC = t;
+      heaterAutoMode = true;
+      Serial.print("Thermostat set to "); Serial.print(targetTempC, 1); Serial.println(" C (auto mode ON).");
+    }
+    return;
   }
 
   if (strncmp(tmp, "w_on", 4) == 0) {

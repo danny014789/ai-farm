@@ -93,6 +93,12 @@ def parse_csv_status(line: str) -> Dict[str, Any]:
             )
         except ValueError:
             pass
+    # Field 14: target greenhouse temp (0.0 = thermostat disabled)
+    if len(parts) >= 14:
+        try:
+            out["target_temp_c"] = float(parts[13])
+        except ValueError:
+            pass
     return out
 
 
@@ -160,6 +166,10 @@ def build_parser() -> argparse.ArgumentParser:
     s_circ.add_argument("state", choices=["on", "off"])
     s_circ.add_argument("--sec", type=int, default=10)
 
+    s_temp = sub.add_parser("set-temp")
+    s_temp.add_argument("temp_c", type=float,
+                        help="Target greenhouse temperature in °C (0 disables thermostat)")
+
     s_cam = sub.add_parser("camera-snap")
     s_cam.add_argument("--out", default="~/Pictures/plant_latest.jpg")
     s_cam.add_argument("--timeout-ms", type=int, default=1200)
@@ -202,6 +212,11 @@ def main() -> int:
 
         if args.sub == "circulation":
             cmd = f"c_on,{args.sec}" if args.state == "on" else "c_off"
+            print(act(sc, cmd)["raw"])
+            return 0
+
+        if args.sub == "set-temp":
+            cmd = f"h_temp,{args.temp_c:.2f}"
             print(act(sc, cmd)["raw"])
             return 0
 

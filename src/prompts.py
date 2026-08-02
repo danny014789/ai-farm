@@ -22,6 +22,7 @@ VALID_ACTIONS = (
     "light_off",
     "heater_on",
     "heater_off",
+    "set_greenhouse_temp",
     "circulation",
     "do_nothing",
 )
@@ -37,8 +38,8 @@ _RESPONSE_SCHEMA = """\
   "assessment": "Brief plant health assessment (1-2 sentences)",
   "actions": [
     {
-      "action": "water|light_on|light_off|heater_on|heater_off|circulation|do_nothing",
-      "params": {"duration_sec": <int, required for water and circulation, omit for others>},
+      "action": "water|light_on|light_off|heater_on|heater_off|set_greenhouse_temp|circulation|do_nothing",
+      "params": {"duration_sec": <int, required for water and circulation>, "temp_c": <float, required for set_greenhouse_temp; 0 disables thermostat>},
       "reason": "Why this specific action is needed"
     }
   ],

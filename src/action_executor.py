@@ -60,6 +60,7 @@ _ACTION_MAP: dict[str, Any] = {
         "--sec",
         str(p.get("duration_sec", 30)),
     ],
+    "set_greenhouse_temp": lambda p: ["set-temp", str(p.get("temp_c", 0))],
 }
 
 # Actions that require no hardware command.
