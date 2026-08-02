@@ -29,7 +29,7 @@ from bot.keyboards import (
 )
 from src.action_executor import ActionExecutor
 from src.actuator_state import reconcile_actuator_state
-from src.claude_client import get_chat_response
+from src.claude_client import MODEL, get_chat_response
 from src.config_loader import load_hardware_profile, load_plant_profile, save_plant_profile
 from src.logger import load_recent_decisions, load_recent_plant_log, log_plant_observations
 from src.plant_agent import (
