@@ -174,7 +174,7 @@ class TestActionMap:
     def test_water_default_duration(self):
         builder = _ACTION_MAP["water"]
         args = builder({})
-        assert args == ["pump", "on", "--sec", "5"]
+        assert args == ["pump", "on", "--sec", "10"]
 
     def test_light_on_args(self):
         builder = _ACTION_MAP["light_on"]

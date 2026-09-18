@@ -21,7 +21,8 @@ from src.sensor_reader import SensorData
 
 SAFETY_LIMITS = {
     "water": {
-        "max_duration_sec": 30,
+        "min_duration_sec": 10,
+        "max_duration_sec": 60,
         "min_interval_min": 30,
         "daily_max_count": 12,
     },
@@ -287,14 +288,14 @@ class TestGlobalRateLimit:
 
 class TestWaterValidation:
     def test_water_duration_capped(self):
-        """Duration above max_duration_sec is capped to 30."""
+        """Duration above max_duration_sec is capped to 60."""
         result = validate_action(
-            {"action": "water", "duration_sec": 60},
+            {"action": "water", "duration_sec": 90},
             _make_sensor_data(),
             [],
         )
         assert result.valid is True
-        assert result.capped_action["duration_sec"] == 30
+        assert result.capped_action["duration_sec"] == 60
         assert result.capped_action.get("_capped") is True
 
     def test_water_duration_within_limit(self):
@@ -306,6 +307,17 @@ class TestWaterValidation:
         )
         assert result.valid is True
         assert result.capped_action["duration_sec"] == 15
+
+    def test_water_duration_raised_to_min(self):
+        """Duration below min_duration_sec is raised to 10."""
+        result = validate_action(
+            {"action": "water", "duration_sec": 5},
+            _make_sensor_data(),
+            [],
+        )
+        assert result.valid is True
+        assert result.capped_action["duration_sec"] == 10
+        assert result.capped_action.get("_capped") is True
 
     def test_water_zero_duration_rejected(self):
         result = validate_action(
@@ -657,12 +669,12 @@ class TestParamsFlattening:
 
     def test_params_flattened_for_water(self):
         result = validate_action(
-            {"action": "water", "params": {"duration_sec": 8}},
+            {"action": "water", "params": {"duration_sec": 20}},
             _make_sensor_data(),
             [],
         )
         assert result.valid is True
-        assert result.capped_action["duration_sec"] == 8
+        assert result.capped_action["duration_sec"] == 20
         assert result.capped_action["action"] == "water"
 
     def test_params_flattened_for_circulation(self):
@@ -692,12 +704,12 @@ class TestParamsFlattening:
     def test_params_flattening_with_capping(self):
         """Params are flattened, then duration is capped."""
         result = validate_action(
-            {"action": "water", "params": {"duration_sec": 50}},
+            {"action": "water", "params": {"duration_sec": 80}},
             _make_sensor_data(),
             [],
         )
         assert result.valid is True
-        assert result.capped_action["duration_sec"] == 30  # capped from 50
+        assert result.capped_action["duration_sec"] == 60  # capped from 80
 
 
 # ---------------------------------------------------------------------------

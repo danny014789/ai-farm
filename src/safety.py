@@ -48,7 +48,8 @@ def _load_limits() -> dict[str, Any]:
         logger.warning("safety_limits.yaml not found, using built-in defaults")
         return {
             "water": {
-                "max_duration_sec": 30,
+                "min_duration_sec": 10,
+                "max_duration_sec": 60,
                 "min_interval_min": 30,
                 "daily_max_count": 12,
             },
@@ -197,7 +198,8 @@ def _validate_water(
         )
 
     water_limits = limits.get("water", {})
-    max_duration = water_limits.get("max_duration_sec", 30)
+    min_duration = water_limits.get("min_duration_sec", 10)
+    max_duration = water_limits.get("max_duration_sec", 60)
     min_interval = water_limits.get("min_interval_min", 60)
     daily_max = water_limits.get("daily_max_count", 6)
 
@@ -213,6 +215,10 @@ def _validate_water(
     if requested > max_duration:
         logger.info("Capping water duration from %ds to %ds", requested, max_duration)
         action["duration_sec"] = max_duration
+        action["_capped"] = True
+    elif requested < min_duration:
+        logger.info("Raising water duration from %ds to %ds", requested, min_duration)
+        action["duration_sec"] = min_duration
         action["_capped"] = True
 
     # Min interval check

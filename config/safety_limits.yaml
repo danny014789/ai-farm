@@ -2,7 +2,8 @@
 # Modify these manually based on your setup. The AI agent will never exceed these values.
 
 water:
-  max_duration_sec: 30        # max single watering duration
+  min_duration_sec: 10        # min single watering duration
+  max_duration_sec: 60        # max single watering duration
   min_interval_min: 30        # minimum minutes between waterings
   daily_max_count: 12         # max waterings per day
 

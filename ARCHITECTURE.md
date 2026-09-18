@@ -87,7 +87,7 @@ decision = parse_decision(response)
 
 # 5. SAFETY CHECK (hardcoded limits, NOT AI-controlled)
 validated = safety_check(decision)
-# - max water: 30 sec
+# - water: 10-60 sec
 # - max heater: never above 30C
 # - no conflicting actions
 # - rate limit: no repeated watering within 1 hour
@@ -113,14 +113,14 @@ in **Python code, not in the AI prompt**.
 
 ```
 Layer 1: HARDCODED LIMITS (in Python, not AI-controllable)
-  - Max water duration: 30 seconds per cycle
+  - Water duration: 10-60 seconds per cycle
   - Max heater: off if temp > 30C
   - Max light: 18 hours per day
   - Min interval between waterings: 60 min
   - Circulation fan: max 3600 seconds (60 min) per cycle, no rate limit between activations
 
 Layer 2: ALLOWLIST (AI can only choose from predefined actions)
-  - water(sec)     -> capped at 30
+  - water(sec)     -> clamped to 10-60
   - light(on|off)  -> checked against daily schedule
   - heater(on|off) -> checked against temp limits
   - circulation(sec) -> capped at 3600

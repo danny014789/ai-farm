@@ -235,7 +235,7 @@ async def help_command(
         "  /history [n]     - Last N decisions (default 5)\n"
         "  /profile         - Plant profile + ideal conditions\n\n"
         "Manual control:\n"
-        "  /water [sec]     - Water (default 5s, max 30s)\n"
+        "  /water [sec]     - Water (default 10s, 10-60s)\n"
         "  /light on|off    - Light control\n"
         "  /heater on|off   - Heater control\n"
         "  /circulation [s] - Circulation fan (default 60s, max 3600s)\n\n"
@@ -306,23 +306,23 @@ async def water_command(
 ) -> None:
     """Handle /water [sec] - manual watering with confirmation.
 
-    Default 5 seconds, max 30.
+    Default 10 seconds, range 10-60.
     """
     args = context.args or []
-    duration = 5
+    duration = 10
 
     if args:
         try:
             duration = int(args[0])
         except ValueError:
             await update.message.reply_text(
-                "Usage: /water [seconds]  (e.g. /water 10)"
+                "Usage: /water [seconds]  (e.g. /water 20)"
             )
             return
 
-    if duration < 1 or duration > 30:
+    if duration < 10 or duration > 60:
         await update.message.reply_text(
-            "Duration must be between 1 and 30 seconds."
+            "Duration must be between 10 and 60 seconds."
         )
         return
 

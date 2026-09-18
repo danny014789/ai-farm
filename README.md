@@ -159,7 +159,7 @@ The AI reads current sensors, checks its memory of past observations, and respon
 | `/help` | Full command list |
 | `/status` | Current sensor readings |
 | `/photo` | Capture and send a plant photo |
-| `/water [sec]` | Manual watering (default 5s, max 30s) |
+| `/water [sec]` | Manual watering (default 10s, range 10-60s) |
 | `/light on\|off` | Toggle grow light |
 | `/heater on\|off` | Toggle heater |
 | `/circulation [sec]` | Run circulation fan (default 60s, max 3600s) |
@@ -223,7 +223,7 @@ These observations are fed back to Claude on every check, so the agent genuinely
 The AI never has unchecked control over hardware. Safety is enforced in Python code, not in the AI prompt.
 
 **Layer 1 -- Hardcoded limits** (`config/safety_limits.yaml`):
-- Max watering: 30 seconds per cycle, minimum 60 minutes between waterings, 6 per day
+- Watering: 10-60 seconds per cycle, minimum 60 minutes between waterings, 6 per day
 - Heater off above 30C, on below 10C (failsafe), max 120 minutes continuous
 - Light: max 18 hours per day within configured schedule
 - Circulation fan: max 3600 seconds (60 min) per activation

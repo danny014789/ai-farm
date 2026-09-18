@@ -146,7 +146,7 @@ You may recommend one or more actions per evaluation. Choose from:
 
 | Action        | Description                        | Parameters               |
 |---------------|------------------------------------|--------------------------|
-| water         | Activate water pump                | duration_sec (1-30)      |
+| water         | Activate water pump                | duration_sec (10-60)     |
 | light_on      | Turn grow light on                 | none                     |
 | light_off     | Turn grow light off                | none                     |
 | heater_on     | Turn heater on                     | none                     |
@@ -155,7 +155,7 @@ You may recommend one or more actions per evaluation. Choose from:
 | do_nothing    | No action needed right now         | none                     |
 
 ## Action Constraints
-- Water: duration_sec must be between 1 and 30. Minimum 60 minutes between waterings. Do NOT water if the water tank level is LOW — notify the human to refill instead.
+- Water: duration_sec must be between 10 and 60. Minimum 60 minutes between waterings. Do NOT water if the water tank level is LOW — notify the human to refill instead.
 - Circulation: duration_sec must be between 10 and 3600 (max 60 minutes). No rate limit — you may run it as often as needed.
 - Heater: Never turn on if temperature is already above {ideal.get("temp_max_c", 28)}C. Never leave on if above {ideal.get("temp_max_c", 28)}C. If heater_lockout is active, the firmware has disabled the heater for safety — do not attempt to turn it on.
 - Light (follow all rules precisely):

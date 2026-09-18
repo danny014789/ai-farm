@@ -49,7 +49,7 @@ class ExecutionResult:
 # Each value is a callable: (params: dict) -> list[str]
 # The returned list is appended to ["python3", farmctl_path].
 _ACTION_MAP: dict[str, Any] = {
-    "water": lambda p: ["pump", "on", "--sec", str(p.get("duration_sec", 5))],
+    "water": lambda p: ["pump", "on", "--sec", str(p.get("duration_sec", 10))],
     "light_on": lambda _: ["light", "on"],
     "light_off": lambda _: ["light", "off"],
     "heater_on": lambda _: ["heater", "on"],
